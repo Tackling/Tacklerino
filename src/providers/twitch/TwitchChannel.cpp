@@ -169,12 +169,6 @@ TwitchChannel::TwitchChannel(const QString &name, bool isWatching)
     });
 
     // timers
-    QObject::connect(&this->chattersListTimer_, &QTimer::timeout, [this] {
-        this->refreshChatters();
-    });
-
-    this->chattersListTimer_.start(5 * 60 * 1000);
-
     QObject::connect(&this->threadClearTimer_, &QTimer::timeout, [this] {
         // We periodically check for any dangling reply threads that missed
         // being cleaned up on messageRemovedFromStart. This could occur if
@@ -256,7 +250,6 @@ TwitchChannel::~TwitchChannel()
 
 void TwitchChannel::initialize()
 {
-    this->refreshChatters();
     this->refreshBadges();
 }
 
@@ -1735,12 +1728,6 @@ void TwitchChannel::refreshPubSub()
 
 void TwitchChannel::refreshChatters()
 {
-    // helix endpoint only works for mods
-    if (!this->hasModRights())
-    {
-        return;
-    }
-
     // setting?
     const auto streamStatus = this->accessStreamStatus();
     const auto viewerCount = static_cast<int>(streamStatus->viewerCount);
@@ -1753,23 +1740,43 @@ void TwitchChannel::refreshChatters()
         }
     }
 
-    // Get chatter list via helix api
-    getHelix()->getChatters(
-        this->roomId(),
-        getApp()->getAccounts()->twitch.getCurrent()->getUserId(),
-        MAX_CHATTERS_TO_FETCH,
-        [this, weak = weakOf<Channel>(this)](auto result) {
-            if (auto shared = weak.lock())
+    // Get chatter list via tackling.cc API
+    const QString url =
+        QStringLiteral(
+            "https://api.tackling.cc/twitch/Chatters?login=%1&limit=1000")
+            .arg(this->getName());
+
+    NetworkRequest(url)
+        .onSuccess([this, weak = weakOf<Channel>(this)](auto result) {
+            auto shared = weak.lock();
+            if (!shared)
             {
-                this->updateOnlineChatters(result.chatters);
-                this->chatterCount_ = result.total;
+                return;
             }
-        },
-        // Refresh chatters should only be used when failing silently is an option
-        [](auto error, auto message) {
-            (void)error;
-            (void)message;
-        });
+
+            const auto obj = result.parseJson();
+
+            QStringList chatters;
+
+            auto addFromArray = [&](const QString &key) {
+                const auto arr = obj.value(key).toArray();
+                for (const auto &v : arr)
+                {
+                    chatters << v.toString();
+                }
+            };
+
+            addFromArray("broadcasters");
+            addFromArray("staff");
+            addFromArray("moderators");
+            addFromArray("vips");
+            addFromArray("viewers");
+            addFromArray("chatbots");
+
+            this->updateOnlineChatters({chatters.begin(), chatters.end()});
+            this->chatterCount_ = obj.value("count").toInt();
+        })
+        .execute();
 }
 
 void TwitchChannel::addReplyThread(const std::shared_ptr<MessageThread> &thread)
