@@ -13,7 +13,10 @@
 #include <IrcMessage>
 #include <pajlada/signals/signal.hpp>
 #include <pajlada/signals/signalholder.hpp>
+#include <QMap>
 #include <QRandomGenerator>
+#include <QSet>
+#include <QTimer>
 
 #include <chrono>
 #include <functional>
@@ -218,6 +221,13 @@ private:
     std::chrono::steady_clock::time_point lastErrorTimeAmount_;
 
     QRandomGenerator generator;
+
+    // NEW: Channels that have been queued for JOIN but not yet confirmed joined
+    // This allows re-queuing only the ones that failed due to rate limits
+    QSet<QString> pendingJoins_;
+    std::mutex pendingJoinsMutex_;
+
+    QTimer *retryTimer_ = nullptr;
 };
 
 }  // namespace chatterino
