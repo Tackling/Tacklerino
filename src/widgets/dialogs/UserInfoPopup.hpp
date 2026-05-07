@@ -122,6 +122,8 @@ private:
         Label *followageLabel = nullptr;
         Label *subageLabel = nullptr;
         Label *rolesLabel = nullptr;
+        Label *globalBadgesLabel = nullptr;
+        Label *updatedAtLabel = nullptr;
 
         LiveIndicator *liveIndicator = nullptr;
 
@@ -136,7 +138,6 @@ private:
         LabelButton *usercardLabel = nullptr;
         LabelButton *switchAvatars = nullptr;
         LabelButton *userlogsLabel = nullptr;
-        LabelButton *stvUserLabel = nullptr;
 
         TimeoutWidget *timeoutWidget = nullptr;
     } ui_;
