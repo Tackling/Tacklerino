@@ -485,6 +485,8 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             vbox.emplace<Label>("").assign(&this->ui_.followageLabel);
             vbox.emplace<Label>("").assign(&this->ui_.subageLabel);
             vbox.emplace<Label>("").assign(&this->ui_.rolesLabel);
+            vbox.emplace<Label>("").assign(&this->ui_.globalBadgesLabel);
+            vbox.emplace<Label>("").assign(&this->ui_.updatedAtLabel);
         }
     }
 
@@ -508,11 +510,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         auto userlogs = user.emplace<LabelButton>("Logs", this)
                             .assign(&this->ui_.userlogsLabel);
 
-        auto stvUser = user.emplace<LabelButton>("7tv User", this)
-                           .assign(&this->ui_.stvUserLabel);
-
         userlogs->setVisible(false);
-        stvUser->setVisible(false);
 
         auto mod = user.emplace<PixmapButton>(this);
         mod->setPixmap(getResources().buttons.mod);
@@ -539,14 +537,6 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             QDesktopServices::openUrl("https://tv.supa.sh/logs?c=" +
                                       this->underlyingChannel_->getName() +
                                       "&u=" + this->userName_);
-        });
-
-        QObject::connect(stvUser.getElement(), &Button::leftClicked, [this] {
-            if (!this->seventvUserID_.isEmpty())
-            {
-                QDesktopServices::openUrl("https://7tv.app/users/" +
-                                          this->seventvUserID_);
-            }
         });
 
         QObject::connect(mod.getElement(), &Button::leftClicked, [this] {
@@ -919,11 +909,6 @@ void UserInfoPopup::installEvents()
             getApp()->getUserData()->userDataUpdated().connect([this]() {
                 this->updateNotes();
             }));
-
-    QObject::connect(getApp()->getStreamerMode(), &IStreamerMode::changed, this,
-                     [this]() {
-                         this->updateNotes();
-                     });
 }
 
 void UserInfoPopup::setData(const QString &name, const ChannelPtr &channel)
@@ -946,7 +931,7 @@ void UserInfoPopup::setData(const QString &name,
     else
     {
         this->userName_ = name;
-        this->kickUserSlug_ = name;
+        this->kickUserSlug_ = KickApi::slugify(name);
     }
 
     this->channel_ = openingChannel;
@@ -1120,20 +1105,51 @@ void UserInfoPopup::updateUserData()
             this->loadAvatar(user.id, user.profileImageUrl, false);
         }
 
-        getHelix()->getChannelFollowers(
-            user.id,
-            [this, hack](const auto &followers) {
-                if (!hack.lock())
-                {
-                    return;
-                }
-                this->ui_.followerCountLabel->setText(
-                    TEXT_FOLLOWERS.arg(localizeNumbers(followers.total)));
-            },
-            [](const auto &errorMessage) {
-                qCWarning(chatterinoTwitch)
-                    << "Error getting followers:" << errorMessage;
-            });
+        // Fetch followers and follows from tackling.cc API
+        {
+            const QString apiUrl =
+                QStringLiteral("https://api.tackling.cc/twitch/UserInfo?id=%1")
+                    .arg(user.id);
+            NetworkRequest(apiUrl)
+                .onSuccess([this, hack](auto result) {
+                    if (!hack.lock())
+                    {
+                        return;
+                    }
+                    const auto obj = result.parseJson();
+                    const int followers = obj.value("followers").toInt();
+                    const int follows = obj.value("follows").toInt();
+                    const int globalBadges = obj.value("globalBadges").toInt();
+                    const QString updatedAt = obj.value("updatedAt").toString();
+
+                    this->ui_.followerCountLabel->setText(
+                        TEXT_FOLLOWERS.arg(localizeNumbers(followers)) +
+                        QStringLiteral("  •  Following: %1")
+                            .arg(localizeNumbers(follows)));
+
+                    this->ui_.globalBadgesLabel->setText(
+                        QStringLiteral("Global Badges: %1")
+                            .arg(localizeNumbers(globalBadges)));
+
+                    if (!updatedAt.isEmpty())
+                    {
+                        const auto dt =
+                            QDateTime::fromString(updatedAt, Qt::ISODateWithMs);
+                        this->ui_.updatedAtLabel->setText(
+                            QStringLiteral("Updated: %1")
+                                .arg(dt.toString("yyyy-MM-dd hh:mm")));
+                    }
+                })
+                .onError([this, hack](auto /*result*/) {
+                    if (!hack.lock())
+                    {
+                        return;
+                    }
+                    this->ui_.followerCountLabel->setText(
+                        TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
+                })
+                .execute();
+        }
         getHelix()->getStreamById(
             user.id,
             [this, hack](bool isLive, const auto &stream) {
@@ -1236,41 +1252,55 @@ void UserInfoPopup::updateUserData()
                 [] {});
         }
 
-        // get roles
-        getIvr()->getUserRoles(
-            this->userName_,
-            [this, hack](const IvrResolve &userInfo) {
-                if (!hack.lock())
-                {
-                    return;
-                }
+        // get roles from tackling.cc API
+        {
+            const QString apiUrl =
+                QStringLiteral("https://api.tackling.cc/twitch/UserInfo?id=%1")
+                    .arg(user.id);
+            NetworkRequest(apiUrl)
+                .onSuccess([this, hack](auto result) {
+                    if (!hack.lock())
+                    {
+                        return;
+                    }
+                    const auto roles =
+                        result.parseJson().value("roles").toObject();
 
-                QString rolesString = "";
+                    QStringList rolesList;
 
-                if (userInfo.isBot)
-                {
-                    rolesString += "Bot ";
-                }
-                if (userInfo.isPartner)
-                {
-                    rolesString += "Partner ";
-                }
-                if (userInfo.isAffiliate)
-                {
-                    rolesString += "Affiliate ";
-                }
-                if (userInfo.isStaff)
-                {
-                    rolesString += "Staff ";
-                }
-                if (userInfo.isExStaff)
-                {
-                    rolesString += "Ex-Staff ";
-                }
+                    if (roles.value("isStaff").toBool())
+                        rolesList << "Staff";
+                    if (roles.value("isSiteAdmin").toBool())
+                        rolesList << "Admin";
+                    if (roles.value("isGlobalMod").toBool())
+                        rolesList << "Global Mod";
+                    if (roles.value("isPartner").toBool())
+                        rolesList << "Partner";
+                    if (roles.value("isAffiliate").toBool())
+                        rolesList << "Affiliate";
+                    if (roles.value("isPreAffiliate").toBool())
+                        rolesList << "Pre-Affiliate";
+                    if (roles.value("isAmbassador").toBool())
+                        rolesList << "Ambassador";
+                    if (roles.value("isExStaff").toBool())
+                        rolesList << "Ex-Staff";
+                    if (roles.value("hasTurbo").toBool())
+                        rolesList << "Turbo User";
+                    if (roles.value("hasPrime").toBool())
+                        rolesList << "Prime User";
+                    if (roles.value("hasPresto").toBool())
+                        rolesList << "Presto User";
+                    if (roles.value("isParticipatingDJ").toBool())
+                        rolesList << "DJ";
+                    if (roles.value("isExtensionsDeveloper").toBool())
+                        rolesList << "Extensions Developer";
+                    if (roles.value("isExtensionsApprover").toBool())
+                        rolesList << "Extensions Approver";
 
-                this->ui_.rolesLabel->setText((rolesString));
-            },
-            [] {});
+                    this->ui_.rolesLabel->setText(rolesList.join(", "));
+                })
+                .execute();
+        }
 
         // get pronouns
         if (getSettings()->showPronouns)
@@ -1399,12 +1429,6 @@ void UserInfoPopup::loadSevenTVAvatar(const QString &userID, bool isKick)
             this->seventvUserID_ = userObj["id"].toString();
             auto url = userObj["avatar_url"].toString();
 
-            if (!this->seventvUserID_.isEmpty() &&
-                getSettings()->stvUsercardButton)
-            {
-                this->ui_.stvUserLabel->setVisible(true);
-            }
-
             if (url.isEmpty())
             {
                 return;
@@ -1526,13 +1550,7 @@ void UserInfoPopup::updateNotes()
         this->ui_.notesPreview->setVisible(false);
         return;
     }
-    if (getApp()->getStreamerMode()->isEnabled() &&
-        getSettings()->streamerModeHideUserNotes)
-    {
-        this->ui_.notesPreview->setText("Notes hidden in streamer mode.");
-        this->ui_.notesPreview->setVisible(true);
-        return;
-    }
+
     this->ui_.notesPreview->setText(userData->notes);
     this->ui_.notesPreview->setVisible(true);
 }
