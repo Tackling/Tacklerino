@@ -444,10 +444,26 @@ void TwitchIrcServer::readConnectionMessageReceived(
             this->pendingJoins_.remove(channelName);
         }
 
+        const QString lowerContent = content.toLower();
+        const bool isJoinRetryNotice =
+            lowerContent.contains("joining channels too quickly") ||
+            lowerContent.contains("join rate") ||
+            lowerContent.contains("too fast") ||
+            lowerContent.contains("throttl") ||
+            lowerContent.contains("too many channels") ||
+            msgId.contains("join", Qt::CaseInsensitive) ||
+            msgId.contains("throttled", Qt::CaseInsensitive);
+
         // === Per-channel temporary failure retry ===
-        if (!shouldNotRetry && !channelName.isEmpty())
+        if (!shouldNotRetry && !channelName.isEmpty() && isJoinRetryNotice)
         {
-            if (this->channels.contains(channelName))
+            bool channelExists = false;
+            {
+                std::lock_guard<std::mutex> lock(this->channelMutex);
+                channelExists = this->channels.contains(channelName);
+            }
+
+            if (channelExists)
             {
                 qCDebug(chatterinoTwitch)
                     << "Retrying join for channel:" << channelName;
@@ -459,7 +475,6 @@ void TwitchIrcServer::readConnectionMessageReceived(
         // === GLOBAL join rate limit ===
         if (!shouldNotRetry)
         {
-            QString lowerContent = content.toLower();
             bool isGlobalRateLimit =
                 lowerContent.contains("joining channels too quickly") ||
                 lowerContent.contains("join rate") ||
@@ -555,17 +570,7 @@ void TwitchIrcServer::onReadConnected(IrcConnection *connection)
         return visible.contains(chan->getName());
     });
 
-    // join channels
-    for (const auto &channel : activeChannels)
-    {
-        if (channel->getName().startsWith("/"))
-        {
-            continue;
-        }
-        this->joinBucket_->send(channel->getName());
-    }
-
-    // Mark all non-special channels as pending
+    // Mark all non-special channels as pending before queueing JOINs.
     {
         std::lock_guard<std::mutex> lock(this->pendingJoinsMutex_);
         this->pendingJoins_.clear();
@@ -577,6 +582,16 @@ void TwitchIrcServer::onReadConnected(IrcConnection *connection)
                 this->pendingJoins_.insert(name.toLower());
             }
         }
+    }
+
+    // join channels
+    for (const auto &channel : activeChannels)
+    {
+        if (channel->getName().startsWith("/"))
+        {
+            continue;
+        }
+        this->joinBucket_->send(channel->getName());
     }
 
     auto connectedMsg = makeSystemMessage("connected");
@@ -654,7 +669,6 @@ std::shared_ptr<Channel> TwitchIrcServer::getCustomChannel(
         return this->automodChannel;
     }
 
-    // $$$ timers for testing - unchanged
     static auto getTimer = [this](ChannelPtr channel, int msBetweenMessages,
                                   bool addInitialMessages) {
         if (addInitialMessages)
@@ -680,7 +694,78 @@ std::shared_ptr<Channel> TwitchIrcServer::getCustomChannel(
         getTimer(channel, 500, true);
         return channel;
     }
-    // ... (other $$$ timers omitted for brevity - they are unchanged)
+    if (channelName == "$$$:e")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 500, false);
+
+        return channel;
+    }
+    if (channelName == "$$$$")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 250, true);
+
+        return channel;
+    }
+    if (channelName == "$$$$:e")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 250, false);
+
+        return channel;
+    }
+    if (channelName == "$$$$$")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 100, true);
+
+        return channel;
+    }
+    if (channelName == "$$$$$:e")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 100, false);
+
+        return channel;
+    }
+    if (channelName == "$$$$$$")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 50, true);
+
+        return channel;
+    }
+    if (channelName == "$$$$$$:e")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 50, false);
+
+        return channel;
+    }
+    if (channelName == "$$$$$$$")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 25, true);
+
+        return channel;
+    }
+    if (channelName == "$$$$$$$:e")
+    {
+        static auto channel = std::make_shared<Channel>(
+            channelName, chatterino::Channel::Type::Misc);
+        getTimer(channel, 25, false);
+
+        return channel;
+    }
 
     return nullptr;
 }
@@ -867,7 +952,108 @@ void TwitchIrcServer::setLastUserThatWhisperedMe(const QString &user)
 void TwitchIrcServer::initEventAPIs(BttvLiveUpdates *bttvLiveUpdates,
                                     SeventvEventAPI *seventvEventAPI)
 {
-    // ... (unchanged - omitted for brevity, keep your original code here)
+    assertInGuiThread();
+
+    if (bttvLiveUpdates != nullptr)
+    {
+        this->signalHolder.managedConnect(
+            bttvLiveUpdates->signals_.emoteAdded, [&](const auto &data) {
+                auto chan = this->getChannelOrEmptyByID(data.channelID);
+
+                postToThread(
+                    [chan, data] {
+                        if (auto *channel =
+                                dynamic_cast<TwitchChannel *>(chan.get()))
+                        {
+                            channel->addBttvEmote(data);
+                        }
+                    },
+                    this);
+            });
+        this->signalHolder.managedConnect(
+            bttvLiveUpdates->signals_.emoteUpdated, [&](const auto &data) {
+                auto chan = this->getChannelOrEmptyByID(data.channelID);
+
+                postToThread(
+                    [chan, data] {
+                        if (auto *channel =
+                                dynamic_cast<TwitchChannel *>(chan.get()))
+                        {
+                            channel->updateBttvEmote(data);
+                        }
+                    },
+                    this);
+            });
+        this->signalHolder.managedConnect(
+            bttvLiveUpdates->signals_.emoteRemoved, [&](const auto &data) {
+                auto chan = this->getChannelOrEmptyByID(data.channelID);
+
+                postToThread(
+                    [chan, data] {
+                        if (auto *channel =
+                                dynamic_cast<TwitchChannel *>(chan.get()))
+                        {
+                            channel->removeBttvEmote(data);
+                        }
+                    },
+                    this);
+            });
+    }
+    else
+    {
+        qCDebug(chatterinoBttv)
+            << "Skipping initialization of Live Updates as it's disabled";
+    }
+
+    if (seventvEventAPI != nullptr)
+    {
+        this->signalHolder.managedConnect(
+            seventvEventAPI->signals_.emoteAdded, [this](const auto &data) {
+                postToThread(
+                    [this, data] {
+                        this->forEachSeventvEmoteSet(
+                            data.emoteSetID, [data](TwitchChannel &chan) {
+                                chan.addSeventvEmote(data);
+                            });
+                    },
+                    this);
+            });
+        this->signalHolder.managedConnect(
+            seventvEventAPI->signals_.emoteUpdated, [this](const auto &data) {
+                postToThread(
+                    [this, data] {
+                        this->forEachSeventvEmoteSet(
+                            data.emoteSetID, [data](TwitchChannel &chan) {
+                                chan.updateSeventvEmote(data);
+                            });
+                    },
+                    this);
+            });
+        this->signalHolder.managedConnect(
+            seventvEventAPI->signals_.emoteRemoved, [this](const auto &data) {
+                postToThread(
+                    [this, data] {
+                        this->forEachSeventvEmoteSet(
+                            data.emoteSetID, [data](TwitchChannel &chan) {
+                                chan.removeSeventvEmote(data);
+                            });
+                    },
+                    this);
+            });
+        this->signalHolder.managedConnect(
+            seventvEventAPI->signals_.userUpdated, [this](const auto &data) {
+                // TODO: is it fine if this is called in non-gui-thread?
+                this->forEachSeventvUser(data.userID,
+                                         [data](TwitchChannel &chan) {
+                                             chan.updateSeventvUser(data);
+                                         });
+            });
+    }
+    else
+    {
+        qCDebug(chatterinoSeventvEventAPI)
+            << "Skipping initialization as the EventAPI is disabled";
+    }
 }
 
 void TwitchIrcServer::reloadAllBTTVChannelEmotes()
@@ -1105,20 +1291,24 @@ ChannelPtr TwitchIrcServer::getOrAddChannel(const QString &dirtyChannelName)
     }
 
     this->channels.insert(channelName, chan);
-    this->signalHolder.managedConnect(
-        twitchChannel->destroyed, [this, channelName] {
-            qCDebug(chatterinoIrc) << "[TwitchIrcServer::addChannel]"
-                                   << channelName << "was destroyed";
-            this->channels.remove(channelName);
+    this->signalHolder.managedConnect(twitchChannel->destroyed, [this,
+                                                                 channelName] {
+        qCDebug(chatterinoIrc) << "[TwitchIrcServer::addChannel]" << channelName
+                               << "was destroyed";
+        this->channels.remove(channelName);
+        {
+            std::lock_guard<std::mutex> pendingLock(this->pendingJoinsMutex_);
+            this->pendingJoins_.remove(channelName.toLower());
+        }
 
-            if (this->readConnection_)
+        if (this->readConnection_)
+        {
+            if (!channelName.startsWith("/"))
             {
-                if (!channelName.startsWith("/"))
-                {
-                    this->readConnection_->sendRaw("PART #" + channelName);
-                }
+                this->readConnection_->sendRaw("PART #" + channelName);
             }
-        });
+        }
+    });
 
     {
         std::lock_guard<std::mutex> lock2(this->connectionMutex_);
@@ -1127,6 +1317,11 @@ ChannelPtr TwitchIrcServer::getOrAddChannel(const QString &dirtyChannelName)
         {
             if (!channelName.startsWith("/"))
             {
+                {
+                    std::lock_guard<std::mutex> pendingLock(
+                        this->pendingJoinsMutex_);
+                    this->pendingJoins_.insert(channelName.toLower());
+                }
                 this->joinBucket_->send(channelName);
             }
         }

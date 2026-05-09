@@ -99,14 +99,14 @@ ChatterListWidget::ChatterListWidget(const TwitchChannel *twitchChannel,
                                      QWidget *parent)
     : BaseWindow({}, parent)
 {
-    this->setWindowTitle("Chatter List - " + twitchChannel->getName());
     assert(twitchChannel != nullptr);
+    this->setWindowTitle("Chatter List - " + twitchChannel->getName());
     this->setAttribute(Qt::WA_DeleteOnClose);
     auto *dockVbox = new QVBoxLayout();
     auto *searchBar = new QLineEdit(this);
-    auto *chattersList = new QListWidget();
-    auto *resultList = new QListWidget();
-    auto *loadingLabel = new QLabel("Loading...");
+    auto *chattersList = new QListWidget(this);
+    auto *resultList = new QListWidget(this);
+    auto *loadingLabel = new QLabel("Loading...", this);
     searchBar->setPlaceholderText("Search User...");
     auto formatListItemText = [](const QString &text) {
         auto *item = new QListWidgetItem();
@@ -158,10 +158,11 @@ ChatterListWidget::ChatterListWidget(const TwitchChannel *twitchChannel,
     // Fetch chatters from tackling.cc API
     const QString url =
         QStringLiteral(
-            "https://api.tackling.cc/twitch/Chatters?login=%1&limit=50000")
+            "https://api.tackling.cc/twitch/Chatters?login=%1&limit=20000")
             .arg(twitchChannel->getName());
 
     NetworkRequest(url)
+        .caller(this)
         .onSuccess([=](auto result) {
             const auto obj = result.parseJson();
 

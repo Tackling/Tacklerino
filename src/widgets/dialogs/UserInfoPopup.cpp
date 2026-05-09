@@ -54,6 +54,7 @@
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QFile>
+#include <QJsonObject>
 #include <QMessageBox>
 #include <QMetaEnum>
 #include <QMovie>
@@ -169,6 +170,75 @@ QString hashUrl(const QString &url)
         QCryptographicHash::hash(bytes, QCryptographicHash::Sha256));
 
     return hashBytes.toHex();
+}
+
+QStringList rolesFromTacklingUserInfo(const QJsonObject &roles)
+{
+    QStringList rolesList;
+
+    if (roles.value("isStaff").toBool())
+    {
+        rolesList << "Staff";
+    }
+    if (roles.value("isSiteAdmin").toBool())
+    {
+        rolesList << "Admin";
+    }
+    if (roles.value("isGlobalMod").toBool())
+    {
+        rolesList << "Global Mod";
+    }
+    if (roles.value("isPartner").toBool())
+    {
+        rolesList << "Partner";
+    }
+    if (roles.value("isAffiliate").toBool())
+    {
+        rolesList << "Affiliate";
+    }
+    if (roles.value("isPreAffiliate").toBool())
+    {
+        rolesList << "Pre-Affiliate";
+    }
+    if (roles.value("isAmbassador").toBool())
+    {
+        rolesList << "Ambassador";
+    }
+    if (roles.value("isExStaff").toBool())
+    {
+        rolesList << "Ex-Staff";
+    }
+    if (roles.value("hasTurbo").toBool())
+    {
+        rolesList << "Turbo User";
+    }
+    if (roles.value("hasPrime").toBool())
+    {
+        rolesList << "Prime User";
+    }
+    if (roles.value("hasPresto").toBool())
+    {
+        rolesList << "Presto User";
+    }
+    if (roles.value("isParticipatingDJ").toBool())
+    {
+        rolesList << "DJ";
+    }
+    if (roles.value("isExtensionsDeveloper").toBool())
+    {
+        rolesList << "Extensions Developer";
+    }
+    if (roles.value("isExtensionsApprover").toBool())
+    {
+        rolesList << "Extensions Approver";
+    }
+
+    return rolesList;
+}
+
+QString normalizeStreamPreviewUrl(QString url)
+{
+    return url.replace("{width}", "360").replace("{height}", "203");
 }
 
 }  // namespace
@@ -909,6 +979,11 @@ void UserInfoPopup::installEvents()
             getApp()->getUserData()->userDataUpdated().connect([this]() {
                 this->updateNotes();
             }));
+
+    QObject::connect(getApp()->getStreamerMode(), &IStreamerMode::changed, this,
+                     [this]() {
+                         this->updateNotes();
+                     });
 }
 
 void UserInfoPopup::setData(const QString &name, const ChannelPtr &channel)
@@ -1105,14 +1180,18 @@ void UserInfoPopup::updateUserData()
             this->loadAvatar(user.id, user.profileImageUrl, false);
         }
 
-        // Fetch followers and follows from tackling.cc API
+        this->ui_.nameLabel->setToolTip({});
+        this->ui_.localizedNameLabel->setToolTip({});
+
+        // Fetch extended user info from tackling.cc API
         {
             const QString apiUrl =
                 QStringLiteral("https://api.tackling.cc/twitch/UserInfo?id=%1")
                     .arg(user.id);
             NetworkRequest(apiUrl)
-                .onSuccess([this, hack](auto result) {
-                    if (!hack.lock())
+                .caller(this)
+                .onSuccess([this, hack, userID = user.id](auto result) {
+                    if (!hack.lock() || this->userId_ != userID)
                     {
                         return;
                     }
@@ -1124,7 +1203,7 @@ void UserInfoPopup::updateUserData()
 
                     this->ui_.followerCountLabel->setText(
                         TEXT_FOLLOWERS.arg(localizeNumbers(followers)) +
-                        QStringLiteral("  •  Following: %1")
+                        QStringLiteral(" - Following: %1")
                             .arg(localizeNumbers(follows)));
 
                     this->ui_.globalBadgesLabel->setText(
@@ -1139,6 +1218,52 @@ void UserInfoPopup::updateUserData()
                             QStringLiteral("Updated: %1")
                                 .arg(dt.toString("yyyy-MM-dd hh:mm")));
                     }
+
+                    const auto roles = rolesFromTacklingUserInfo(
+                        obj.value("roles").toObject());
+                    this->ui_.rolesLabel->setText(roles.join(", "));
+
+                    const auto stream = obj.value("stream");
+                    if (!stream.isObject())
+                    {
+                        return;
+                    }
+
+                    const auto streamObj = stream.toObject();
+                    const auto previewUrl = normalizeStreamPreviewUrl(
+                        streamObj.value("previewImageURL").toString());
+                    if (previewUrl.isEmpty())
+                    {
+                        return;
+                    }
+
+                    NetworkRequest(previewUrl, NetworkRequestType::Get)
+                        .caller(this)
+                        .followRedirects(true)
+                        .onSuccess([this, hack, userID](auto imageResult) {
+                            if (!hack.lock() || this->userId_ != userID ||
+                                imageResult.status() != 200)
+                            {
+                                return;
+                            }
+
+                            const auto thumbnail = QString::fromLatin1(
+                                imageResult.getData().toBase64());
+                            const auto tooltip =
+                                QStringLiteral("<p style=\"text-align: "
+                                               "center;\"><img "
+                                               "height=\"203\" "
+                                               "src=\"data:image/jpg;"
+                                               "base64, ") %
+                                thumbnail % QStringLiteral("\"></p>");
+
+                            this->ui_.nameLabel->setToolTip(tooltip);
+                            this->ui_.nameLabel->setMouseTracking(true);
+                            this->ui_.localizedNameLabel->setToolTip(tooltip);
+                            this->ui_.localizedNameLabel->setMouseTracking(
+                                true);
+                        })
+                        .execute();
                 })
                 .onError([this, hack](auto /*result*/) {
                     if (!hack.lock())
@@ -1250,56 +1375,6 @@ void UserInfoPopup::updateUserData()
                     }
                 },
                 [] {});
-        }
-
-        // get roles from tackling.cc API
-        {
-            const QString apiUrl =
-                QStringLiteral("https://api.tackling.cc/twitch/UserInfo?id=%1")
-                    .arg(user.id);
-            NetworkRequest(apiUrl)
-                .onSuccess([this, hack](auto result) {
-                    if (!hack.lock())
-                    {
-                        return;
-                    }
-                    const auto roles =
-                        result.parseJson().value("roles").toObject();
-
-                    QStringList rolesList;
-
-                    if (roles.value("isStaff").toBool())
-                        rolesList << "Staff";
-                    if (roles.value("isSiteAdmin").toBool())
-                        rolesList << "Admin";
-                    if (roles.value("isGlobalMod").toBool())
-                        rolesList << "Global Mod";
-                    if (roles.value("isPartner").toBool())
-                        rolesList << "Partner";
-                    if (roles.value("isAffiliate").toBool())
-                        rolesList << "Affiliate";
-                    if (roles.value("isPreAffiliate").toBool())
-                        rolesList << "Pre-Affiliate";
-                    if (roles.value("isAmbassador").toBool())
-                        rolesList << "Ambassador";
-                    if (roles.value("isExStaff").toBool())
-                        rolesList << "Ex-Staff";
-                    if (roles.value("hasTurbo").toBool())
-                        rolesList << "Turbo User";
-                    if (roles.value("hasPrime").toBool())
-                        rolesList << "Prime User";
-                    if (roles.value("hasPresto").toBool())
-                        rolesList << "Presto User";
-                    if (roles.value("isParticipatingDJ").toBool())
-                        rolesList << "DJ";
-                    if (roles.value("isExtensionsDeveloper").toBool())
-                        rolesList << "Extensions Developer";
-                    if (roles.value("isExtensionsApprover").toBool())
-                        rolesList << "Extensions Approver";
-
-                    this->ui_.rolesLabel->setText(rolesList.join(", "));
-                })
-                .execute();
         }
 
         // get pronouns
@@ -1548,6 +1623,13 @@ void UserInfoPopup::updateNotes()
     {
         this->ui_.notesPreview->setText("");
         this->ui_.notesPreview->setVisible(false);
+        return;
+    }
+    if (getApp()->getStreamerMode()->isEnabled() &&
+        getSettings()->streamerModeHideUserNotes)
+    {
+        this->ui_.notesPreview->setText("Notes hidden in streamer mode.");
+        this->ui_.notesPreview->setVisible(true);
         return;
     }
 
