@@ -32,9 +32,11 @@ jobs:
           nix_path: nixpkgs=https://github.com/NixOS/nixpkgs/archive/${{ env.NIX_PKGS_REF }}.tar.gz
 
       - name: Install Attic Client
+        if: env.ATTIC_CACHE != '' && env.ATTIC_ENDPOINT != '' && env.ATTIC_TOKEN != ''
         run: nix profile install --inputs-from https://github.com/NixOS/nixpkgs/archive/$NIX_PKGS_REF.tar.gz nixpkgs#attic-client
 
       - name: Attic Login
+        if: env.ATTIC_CACHE != '' && env.ATTIC_ENDPOINT != '' && env.ATTIC_TOKEN != ''
         run: attic login $ATTIC_CACHE $ATTIC_ENDPOINT $ATTIC_TOKEN
 
       - name: Install Cachix Client
@@ -47,7 +49,9 @@ jobs:
         run: nix build .#package -L
 
       - name: Attic Push
+        if: env.ATTIC_CACHE != '' && env.ATTIC_ENDPOINT != '' && env.ATTIC_TOKEN != ''
         run: attic push $ATTIC_CACHE ./result
 
       - name: Cachix Push
+        if: env.CACHIX_CACHE != '' && env.CACHIX_AUTH_TOKEN != ''
         run: cachix push $CACHIX_CACHE ./result
