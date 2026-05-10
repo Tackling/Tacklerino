@@ -1202,17 +1202,15 @@ void UserInfoPopup::updateUserData()
                     const int globalBadges = obj.value("globalBadges").toInt();
                     const QString updatedAt = obj.value("updatedAt").toString();
                     const bool isBanned = obj.value("banned").toBool();
-                    const QString banReason =
-                        obj.value("banReason").toString();
+                    const QString banReason = obj.value("banReason").toString();
 
                     if (isBanned)
                     {
                         QString banText;
                         if (banReason == u"TOS_TEMPORARY")
                         {
-                            banText =
-                                QStringLiteral("%1 is temporarily banned")
-                                    .arg(this->userName_);
+                            banText = QStringLiteral("%1 is temporarily banned")
+                                          .arg(this->userName_);
                         }
                         else if (banReason == u"TOS_INDEFINITE")
                         {
@@ -1232,25 +1230,21 @@ void UserInfoPopup::updateUserData()
                                 obj.value("deletedAt").toString();
                             if (!deletedAt.isEmpty())
                             {
-                                const auto deletedDt =
-                                    QDateTime::fromString(deletedAt,
-                                                         Qt::ISODateWithMs);
-                                const auto daysAgo =
-                                    deletedDt.daysTo(
-                                        QDateTime::currentDateTimeUtc());
-                                banText =
-                                    QStringLiteral(
-                                        "%1 deactivated their account %2 "
-                                        "days ago")
-                                        .arg(this->userName_)
-                                        .arg(daysAgo);
+                                const auto deletedDt = QDateTime::fromString(
+                                    deletedAt, Qt::ISODateWithMs);
+                                const auto daysAgo = deletedDt.daysTo(
+                                    QDateTime::currentDateTimeUtc());
+                                banText = QStringLiteral(
+                                              "%1 deactivated their account %2 "
+                                              "days ago")
+                                              .arg(this->userName_)
+                                              .arg(daysAgo);
                             }
                             else
                             {
-                                banText =
-                                    QStringLiteral(
-                                        "%1 deactivated their account")
-                                        .arg(this->userName_);
+                                banText = QStringLiteral(
+                                              "%1 deactivated their account")
+                                              .arg(this->userName_);
                             }
                         }
                         this->ui_.banStatusLabel->setText(banText);
