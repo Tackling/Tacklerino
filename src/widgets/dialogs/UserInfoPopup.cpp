@@ -557,6 +557,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             vbox.emplace<Label>("").assign(&this->ui_.rolesLabel);
             vbox.emplace<Label>("").assign(&this->ui_.globalBadgesLabel);
             vbox.emplace<Label>("").assign(&this->ui_.updatedAtLabel);
+            vbox.emplace<Label>("").assign(&this->ui_.banStatusLabel);
         }
     }
 
@@ -1200,6 +1201,60 @@ void UserInfoPopup::updateUserData()
                     const int follows = obj.value("follows").toInt();
                     const int globalBadges = obj.value("globalBadges").toInt();
                     const QString updatedAt = obj.value("updatedAt").toString();
+                    const bool isBanned = obj.value("banned").toBool();
+                    const QString banReason =
+                        obj.value("banReason").toString();
+
+                    if (isBanned)
+                    {
+                        QString banText;
+                        if (banReason == u"TOS_TEMPORARY")
+                        {
+                            banText =
+                                QStringLiteral("%1 is temporarily banned")
+                                    .arg(this->userName_);
+                        }
+                        else if (banReason == u"TOS_INDEFINITE")
+                        {
+                            banText =
+                                QStringLiteral("%1 is indefinitely banned")
+                                    .arg(this->userName_);
+                        }
+                        else if (banReason == u"DMCA")
+                        {
+                            banText = QStringLiteral(
+                                          "%1 is banned due to DMCA violations")
+                                          .arg(this->userName_);
+                        }
+                        else if (banReason == u"DEACTIVATED")
+                        {
+                            const QString deletedAt =
+                                obj.value("deletedAt").toString();
+                            if (!deletedAt.isEmpty())
+                            {
+                                const auto deletedDt =
+                                    QDateTime::fromString(deletedAt,
+                                                         Qt::ISODateWithMs);
+                                const auto daysAgo =
+                                    deletedDt.daysTo(
+                                        QDateTime::currentDateTimeUtc());
+                                banText =
+                                    QStringLiteral(
+                                        "%1 deactivated their account %2 "
+                                        "days ago")
+                                        .arg(this->userName_)
+                                        .arg(daysAgo);
+                            }
+                            else
+                            {
+                                banText =
+                                    QStringLiteral(
+                                        "%1 deactivated their account")
+                                        .arg(this->userName_);
+                            }
+                        }
+                        this->ui_.banStatusLabel->setText(banText);
+                    }
 
                     this->ui_.followerCountLabel->setText(
                         TEXT_FOLLOWERS.arg(localizeNumbers(followers)) +

@@ -124,6 +124,7 @@ private:
         Label *rolesLabel = nullptr;
         Label *globalBadgesLabel = nullptr;
         Label *updatedAtLabel = nullptr;
+        Label *banStatusLabel = nullptr;
 
         LiveIndicator *liveIndicator = nullptr;
 
