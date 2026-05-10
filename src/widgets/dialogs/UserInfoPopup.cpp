@@ -1006,7 +1006,7 @@ void UserInfoPopup::setData(const QString &name,
     else
     {
         this->userName_ = name;
-        this->kickUserSlug_ = KickApi::slugify(name);
+        this->kickUserSlug_ = name.toLower();
     }
 
     this->channel_ = openingChannel;
