@@ -241,8 +241,6 @@ QString normalizeStreamPreviewUrl(QString url)
     return url.replace("{width}", "360").replace("{height}", "203");
 }
 
-}  // namespace
-
 namespace chatterino {
 
 using namespace literals;
@@ -1121,6 +1119,7 @@ void UserInfoPopup::updateUserData()
         this->ui_.userIDLabel->setProperty("copy-text",
                                            TEXT_UNAVAILABLE.toString());
     };
+
     const auto onUserFetched = [this, hack,
                                 currentUser](const HelixUser &user) {
         if (!hack.lock())
@@ -1198,7 +1197,6 @@ void UserInfoPopup::updateUserData()
                     }
                     const auto obj = result.parseJson();
                     const int followers = obj.value("followers").toInt();
-                    const int follows = obj.value("follows").toInt();
                     const int globalBadges = obj.value("globalBadges").toInt();
                     const QString updatedAt = obj.value("updatedAt").toString();
                     const bool isBanned = obj.value("banned").toBool();
@@ -1214,20 +1212,17 @@ void UserInfoPopup::updateUserData()
                         }
                         else if (banReason == u"TOS_INDEFINITE")
                         {
-                            banText =
-                                QStringLiteral("%1 is indefinitely banned")
-                                    .arg(this->userName_);
+                            banText = QStringLiteral("%1 is indefinitely banned")
+                                          .arg(this->userName_);
                         }
                         else if (banReason == u"DMCA")
                         {
-                            banText = QStringLiteral(
-                                          "%1 is banned due to DMCA violations")
+                            banText = QStringLiteral("%1 is banned due to DMCA violations")
                                           .arg(this->userName_);
                         }
                         else if (banReason == u"DEACTIVATED")
                         {
-                            const QString deletedAt =
-                                obj.value("deletedAt").toString();
+                            const QString deletedAt = obj.value("deletedAt").toString();
                             if (!deletedAt.isEmpty())
                             {
                                 const auto deletedDt = QDateTime::fromString(
@@ -1235,65 +1230,62 @@ void UserInfoPopup::updateUserData()
                                 const auto daysAgo = deletedDt.daysTo(
                                     QDateTime::currentDateTimeUtc());
                                 banText = QStringLiteral(
-                                              "%1 deactivated their account %2 "
-                                              "days ago")
+                                              "%1 deactivated their account %2 days ago")
                                               .arg(this->userName_)
                                               .arg(daysAgo);
                             }
                             else
                             {
-                                banText = QStringLiteral(
-                                              "%1 deactivated their account")
+                                banText = QStringLiteral("%1 deactivated their account")
                                               .arg(this->userName_);
                             }
                         }
                         this->ui_.banStatusLabel->setText(banText);
 
-                        // Populate fields from Tackling API since Helix
-                        // won't return data for banned users
-                        const QString createdAt =
-                            obj.value("createdAt").toString();
+                        // Populate fields from Tackling API for banned users
+                        const QString createdAt = obj.value("createdAt").toString();
                         if (!createdAt.isEmpty())
                         {
-                            const auto dt = QDateTime::fromString(
-                                createdAt, Qt::ISODateWithMs);
+                            const auto dt = QDateTime::fromString(createdAt, Qt::ISODateWithMs);
                             this->ui_.createdDateLabel->setText(
-                                TEXT_CREATED.arg(
-                                    dt.toString("yyyy-MM-dd")));
+                                TEXT_CREATED.arg(dt.toString("yyyy-MM-dd")));
                             this->ui_.createdDateLabel->setToolTip(
-                                formatLongFriendlyDuration(
-                                    dt,
-                                    QDateTime::currentDateTimeUtc()) +
+                                formatLongFriendlyDuration(dt, QDateTime::currentDateTimeUtc()) +
                                 u" ago"_s);
-                            this->ui_.createdDateLabel->setMouseTracking(
-                                true);
+                            this->ui_.createdDateLabel->setMouseTracking(true);
                         }
 
                         const QString userId = obj.value("id").toString();
                         if (!userId.isEmpty())
                         {
-                            this->ui_.userIDLabel->setText(TEXT_USER_ID %
-                                                           userId);
-                            this->ui_.userIDLabel->setProperty("copy-text",
-                                                               userId);
+                            this->ui_.userIDLabel->setText(TEXT_USER_ID % userId);
+                            this->ui_.userIDLabel->setProperty("copy-text", userId);
                         }
 
-                        const QString displayName =
-                            obj.value("displayName").toString();
-                        const QString chatColor =
-                            obj.value("chatColor").toString();
-                        const QColor nameColor =
-                            chatColor.isEmpty() ? QColor(Qt::white)
-                                                : QColor(chatColor);
+                        const QString displayName = obj.value("displayName").toString();
+                        const QString chatColor = obj.value("chatColor").toString();
+                        const QColor nameColor = chatColor.isEmpty() ? QColor(Qt::white)
+                                                                     : QColor(chatColor);
+
                         if (!displayName.isEmpty())
                         {
                             this->ui_.nameLabel->setText(displayName);
-                            this->ui_.nameLabel->setProperty("copy-text",
-                                                             displayName);
+                            this->ui_.nameLabel->setProperty("copy-text", displayName);
                         }
                         auto palette = this->ui_.nameLabel->palette();
                         palette.setColor(QPalette::WindowText, nameColor);
                         this->ui_.nameLabel->setPalette(palette);
+
+                        // Do not show Global Badges for banned users
+                        this->ui_.globalBadgesLabel->setText("");
+                    }
+                    else
+                    {
+                        // Show Global Badges only for active (non-banned) users
+                        this->ui_.globalBadgesLabel->setText(
+                            globalBadges > 0
+                                ? QStringLiteral("Global Badges: %1").arg(globalBadges)
+                                : QStringLiteral(""));
                     }
 
                     const auto roles = rolesFromTacklingUserInfo(
@@ -1352,6 +1344,7 @@ void UserInfoPopup::updateUserData()
                 })
                 .execute();
         }
+
         getHelix()->getStreamById(
             user.id,
             [this, hack](bool isLive, const auto &stream) {
