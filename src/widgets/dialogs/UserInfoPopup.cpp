@@ -820,281 +820,6 @@ void UserInfoPopup::windowDeactivationEvent()
     }
 }
 
-void UserInfoPopup::installEvents()
-{
-    std::shared_ptr<bool> ignoreNext = std::make_shared<bool>(false);
-
-    // block
-    QObject::connect(
-        this->ui_.block, &QCheckBox::stateChanged,
-        [this](int newState) mutable {
-            if (this->isKick_)
-            {
-                return;
-            }
-
-            auto currentUser = getApp()->getAccounts()->twitch.getCurrent();
-
-            const auto reenableBlockCheckbox = [this] {
-                this->ui_.block->setEnabled(true);
-            };
-
-            if (!this->ui_.block->isEnabled())
-            {
-                reenableBlockCheckbox();
-                return;
-            }
-
-            if (newState == Qt::Unchecked)
-            {
-                this->ui_.block->setEnabled(false);
-
-                getApp()->getAccounts()->twitch.getCurrent()->unblockUser(
-                    this->userId_, this->userName_, this,
-                    [this, reenableBlockCheckbox, currentUser] {
-                        this->channel_->addSystemMessage(
-                            QString("You successfully unblocked user %1")
-                                .arg(this->userName_));
-                        reenableBlockCheckbox();
-                    },
-                    [this, reenableBlockCheckbox] {
-                        this->channel_->addSystemMessage(
-                            QString("User %1 couldn't be unblocked, an unknown "
-                                    "error occurred!")
-                                .arg(this->userName_));
-                        reenableBlockCheckbox();
-                    });
-                return;
-            }
-
-            if (newState == Qt::Checked)
-            {
-                this->ui_.block->setEnabled(false);
-
-                bool wasPinned = this->ensurePinned();
-                auto btn = QMessageBox::warning(
-                    this, u"Blocking " % this->userName_,
-                    u"Blocking %1 can cause unintended side-effects like unfollowing.\n\n"_s
-                    "Are you sure you want to block %1?".arg(this->userName_),
-                    QMessageBox::Yes | QMessageBox::Cancel,
-                    QMessageBox::Cancel);
-                if (wasPinned)
-                {
-                    this->togglePinned();
-                }
-                if (btn != QMessageBox::Yes)
-                {
-                    reenableBlockCheckbox();
-                    QSignalBlocker blocker(this->ui_.block);
-                    this->ui_.block->setCheckState(Qt::Unchecked);
-                    return;
-                }
-
-                getApp()->getAccounts()->twitch.getCurrent()->blockUser(
-                    this->userId_, this->userName_, this,
-                    [this, reenableBlockCheckbox, currentUser] {
-                        this->channel_->addSystemMessage(
-                            QString("You successfully blocked user %1")
-                                .arg(this->userName_));
-                        reenableBlockCheckbox();
-                    },
-                    [this, reenableBlockCheckbox] {
-                        this->channel_->addSystemMessage(
-                            QString("User %1 couldn't be blocked, an "
-                                    "unknown error occurred!")
-                                .arg(this->userName_));
-                        reenableBlockCheckbox();
-                    });
-                return;
-            }
-
-            qCWarning(chatterinoWidget)
-                << "Unexpected check-state when blocking" << this->userName_
-                << QMetaEnum::fromType<Qt::CheckState>().valueToKey(newState);
-        });
-
-    // ignore highlights
-    QObject::connect(
-        this->ui_.ignoreHighlights, &QCheckBox::clicked,
-        [this](bool checked) mutable {
-            this->ui_.ignoreHighlights->setEnabled(false);
-
-            if (checked)
-            {
-                getSettings()->blacklistedUsers.insert(
-                    HighlightBlacklistUser{this->userName_, false});
-                this->ui_.ignoreHighlights->setEnabled(true);
-            }
-            else
-            {
-                const auto &vector = getSettings()->blacklistedUsers.raw();
-
-                for (int i = 0; i < static_cast<int>(vector.size()); i++)
-                {
-                    if (this->userName_ ==
-                        vector[static_cast<size_t>(i)].getPattern())
-                    {
-                        getSettings()->blacklistedUsers.removeAt(i);
-                        i--;
-                    }
-                }
-                if (getSettings()->isBlacklistedUser(this->userName_))
-                {
-                    this->ui_.ignoreHighlights->setToolTip(
-                        "Name matched by regex");
-                }
-                else
-                {
-                    this->ui_.ignoreHighlights->setEnabled(true);
-                }
-            }
-        });
-
-    // user notes
-    QObject::connect(
-        this->ui_.notesAdd, &LabelButton::clicked, [this]() mutable {
-            if (this->editUserNotesDialog_.isNull())
-            {
-                this->editUserNotesDialog_ = new EditUserNotesDialog(this);
-                // ignoring since it the dialog is only used in this instance
-                std::ignore = this->editUserNotesDialog_->onOk.connect(
-                    [userId = this->userId_](const QString &newNotes) {
-                        getApp()->getUserData()->setUserNotes(userId, newNotes);
-                    });
-            }
-
-            auto userData = getApp()->getUserData()->getUser(this->userId_);
-            auto initialNotes =
-                userData.has_value() ? userData->notes : QString();
-
-            this->editUserNotesDialog_->setNotes(initialNotes);
-            this->editUserNotesDialog_->updateWindowTitle(this->userName_);
-            this->editUserNotesDialog_->show();
-        });
-
-    // user data updated
-    this->userDataUpdatedConnection_ =
-        std::make_unique<pajlada::Signals::ScopedConnection>(
-            getApp()->getUserData()->userDataUpdated().connect([this]() {
-                this->updateNotes();
-            }));
-
-    QObject::connect(getApp()->getStreamerMode(), &IStreamerMode::changed, this,
-                     [this]() {
-                         this->updateNotes();
-                     });
-}
-
-void UserInfoPopup::setData(const QString &name, const ChannelPtr &channel)
-{
-    this->setData(name, channel, channel);
-}
-
-void UserInfoPopup::setData(const QString &name,
-                            const ChannelPtr &contextChannel,
-                            const ChannelPtr &openingChannel)
-{
-    const QStringView idPrefix = u"id:";
-    bool isId = name.startsWith(idPrefix);
-    if (isId)
-    {
-        this->userId_ = name.mid(idPrefix.size());
-        this->updateNotes();
-        this->userName_ = "";
-    }
-    else
-    {
-        this->userName_ = name;
-        this->kickUserSlug_ = name.toLower();
-    }
-
-    this->channel_ = openingChannel;
-
-    if (!contextChannel->isEmpty())
-    {
-        this->underlyingChannel_ = contextChannel;
-    }
-    else
-    {
-        this->underlyingChannel_ = openingChannel;
-    }
-
-    this->setWindowTitle(
-        TEXT_TITLE.arg(name, this->underlyingChannel_->getName()));
-    this->isKick_ = this->underlyingChannel_->getType() == Channel::Type::Kick;
-    if (this->isKick_)
-    {
-        this->ui_.timeoutWidget->setMinTimeout(60);
-    }
-
-    this->ui_.nameLabel->setText(name);
-    this->ui_.nameLabel->setProperty("copy-text", name);
-
-    if (this->isKick_)
-    {
-        this->updateKickUserData();
-    }
-    else
-    {
-        this->updateUserData();
-    }
-
-    this->userStateChanged_.invoke();
-
-    if (!isId)
-    {
-        this->updateLatestMessages();
-    }
-    // If we're opening by ID, this will be called as soon as we get the information from twitch
-
-    auto type = this->channel_->getType();
-    if (type == Channel::Type::TwitchLive ||
-        type == Channel::Type::TwitchWhispers || type == Channel::Type::Misc ||
-        type == Channel::Type::Kick)
-    {
-        // not a normal twitch channel, the url opened by the button will be invalid, so hide the button
-        this->ui_.usercardLabel->hide();
-    }
-}
-
-void UserInfoPopup::updateLatestMessages()
-{
-    auto filteredChannel =
-        filterMessages(this->userName_, this->underlyingChannel_);
-    this->ui_.latestMessages->setChannel(filteredChannel);
-    this->ui_.latestMessages->setSourceChannel(this->underlyingChannel_);
-
-    const bool hasMessages = filteredChannel->hasMessages();
-    this->ui_.latestMessages->setVisible(hasMessages);
-    this->ui_.noMessagesLabel->setVisible(!hasMessages);
-
-    // shrink dialog in case ChannelView goes from visible to hidden
-    this->adjustSize();
-
-    this->refreshConnection_ =
-        std::make_unique<pajlada::Signals::ScopedConnection>(
-            this->underlyingChannel_->messageAppended.connect(
-                [this, hasMessages](auto message, auto) {
-                    if (!checkMessageUserName(this->userName_, message))
-                    {
-                        return;
-                    }
-
-                    if (hasMessages)
-                    {
-                        // display message in ChannelView
-                        this->ui_.latestMessages->channel()->addMessage(
-                            message, MessageContext::Repost);
-                    }
-                    else
-                    {
-                        // The ChannelView is currently hidden, so manually refresh
-                        // and display the latest messages
-                        this->updateLatestMessages();
-                    }
-                }));
-}
-
 void UserInfoPopup::updateUserData()
 {
     this->ui_.userlogsLabel->setVisible(true);
@@ -1108,86 +833,91 @@ void UserInfoPopup::updateUserData()
             return;
         }
 
-        // this can occur when the account doesn't exist.
         this->ui_.followerCountLabel->setText(
             TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
-        this->ui_.createdDateLabel->setText(TEXT_CREATED.arg(TEXT_UNAVAILABLE));
+        this->ui_.createdDateLabel->setText(
+            TEXT_CREATED.arg(TEXT_UNAVAILABLE));
 
         this->ui_.nameLabel->setText(this->userName_);
 
         this->ui_.userIDLabel->setText(u"ID " % TEXT_UNAVAILABLE);
-        this->ui_.userIDLabel->setProperty("copy-text",
-                                           TEXT_UNAVAILABLE.toString());
+        this->ui_.userIDLabel->setProperty(
+            "copy-text",
+            TEXT_UNAVAILABLE.toString());
     };
 
-    const auto onUserFetched = [this, hack,
-                                currentUser](const HelixUser &user) {
-        if (!hack.lock())
-        {
-            return;
-        }
+    const auto onUserFetched =
+        [this, hack, currentUser](const HelixUser &user) {
+            if (!hack.lock())
+            {
+                return;
+            }
 
-        // Correct for when being opened with ID
-        if (this->userName_.isEmpty())
-        {
-            this->userName_ = user.login;
-            this->ui_.nameLabel->setText(user.login);
+            if (this->userName_.isEmpty())
+            {
+                this->userName_ = user.login;
+                this->ui_.nameLabel->setText(user.login);
+                this->updateLatestMessages();
+            }
 
-            // Ensure recent messages are shown
-            this->updateLatestMessages();
-        }
+            this->userId_ = user.id;
+            this->helixAvatarUrl_ = user.profileImageUrl;
+            this->updateAvatarUrl();
+            this->updateNotes();
 
-        this->userId_ = user.id;
-        this->helixAvatarUrl_ = user.profileImageUrl;
-        this->updateAvatarUrl();
-        this->updateNotes();
+            if (user.displayName.toLower() != user.login)
+            {
+                this->ui_.localizedNameLabel->setText(user.displayName);
+                this->ui_.localizedNameLabel->setProperty(
+                    "copy-text",
+                    user.displayName);
+                this->ui_.localizedNameLabel->setVisible(true);
+                this->ui_.localizedNameCopyButton->setVisible(true);
+            }
+            else
+            {
+                this->ui_.nameLabel->setText(user.displayName);
+                this->ui_.nameLabel->setProperty(
+                    "copy-text",
+                    user.displayName);
+            }
 
-        // copyable button for login name of users with a localized username
-        if (user.displayName.toLower() != user.login)
-        {
-            this->ui_.localizedNameLabel->setText(user.displayName);
-            this->ui_.localizedNameLabel->setProperty("copy-text",
-                                                      user.displayName);
-            this->ui_.localizedNameLabel->setVisible(true);
-            this->ui_.localizedNameCopyButton->setVisible(true);
-        }
-        else
-        {
-            this->ui_.nameLabel->setText(user.displayName);
-            this->ui_.nameLabel->setProperty("copy-text", user.displayName);
-        }
+            this->setWindowTitle(
+                TEXT_TITLE.arg(user.displayName,
+                               this->underlyingChannel_->getName()));
 
-        this->setWindowTitle(TEXT_TITLE.arg(
-            user.displayName, this->underlyingChannel_->getName()));
-        this->ui_.createdDateLabel->setText(
-            TEXT_CREATED.arg(user.createdAt.section("T", 0, 0)));
-        this->ui_.createdDateLabel->setToolTip(
-            formatLongFriendlyDuration(
-                QDateTime::fromString(user.createdAt, Qt::ISODateWithMs),
-                QDateTime::currentDateTimeUtc()) +
-            u" ago"_s);
-        this->ui_.createdDateLabel->setMouseTracking(true);
-        this->ui_.userIDLabel->setText(TEXT_USER_ID % user.id);
-        this->ui_.userIDLabel->setProperty("copy-text", user.id);
+            this->ui_.createdDateLabel->setText(
+                TEXT_CREATED.arg(user.createdAt.section("T", 0, 0)));
 
-        if (getApp()->getStreamerMode()->isEnabled() &&
-            getSettings()->streamerModeHideUsercardAvatars)
-        {
-            this->ui_.avatarButton->setPixmap(getResources().streamerMode);
-        }
-        else
-        {
-            this->loadAvatar(user.id, user.profileImageUrl, false);
-        }
+            this->ui_.createdDateLabel->setToolTip(
+                formatLongFriendlyDuration(
+                    QDateTime::fromString(user.createdAt, Qt::ISODateWithMs),
+                    QDateTime::currentDateTimeUtc()) +
+                u" ago"_s);
 
-        this->ui_.nameLabel->setToolTip({});
-        this->ui_.localizedNameLabel->setToolTip({});
+            this->ui_.createdDateLabel->setMouseTracking(true);
 
-        // Fetch extended user info from tackling.cc API
-        {
+            this->ui_.userIDLabel->setText(TEXT_USER_ID % user.id);
+            this->ui_.userIDLabel->setProperty("copy-text", user.id);
+
+            if (getApp()->getStreamerMode()->isEnabled() &&
+                getSettings()->streamerModeHideUsercardAvatars)
+            {
+                this->ui_.avatarButton->setPixmap(
+                    getResources().streamerMode);
+            }
+            else
+            {
+                this->loadAvatar(user.id, user.profileImageUrl, false);
+            }
+
+            this->ui_.nameLabel->setToolTip({});
+            this->ui_.localizedNameLabel->setToolTip({});
+
             const QString apiUrl =
                 QStringLiteral("https://api.tackling.cc/twitch/UserInfo?id=%1")
                     .arg(user.id);
+
             NetworkRequest(apiUrl)
                 .caller(this)
                 .onSuccess([this, hack, userID = user.id](auto result) {
@@ -1195,101 +925,97 @@ void UserInfoPopup::updateUserData()
                     {
                         return;
                     }
+
                     const auto obj = result.parseJson();
-                    const int followers = obj.value("followers").toInt();
+
+                    const int followers = obj.value("followers").toInt(-1);
                     const int globalBadges = obj.value("globalBadges").toInt();
-                    const QString updatedAt = obj.value("updatedAt").toString();
-                    const bool isBanned = obj.value("banned").toBool();
-                    const QString banReason = obj.value("banReason").toString();
 
-                    if (isBanned)
+                    if (followers >= 0)
                     {
-                        QString banText;
-                        if (banReason == u"TOS_TEMPORARY")
-                        {
-                            banText = QStringLiteral("%1 is temporarily banned")
-                                          .arg(this->userName_);
-                        }
-                        else if (banReason == u"TOS_INDEFINITE")
-                        {
-                            banText = QStringLiteral("%1 is indefinitely banned")
-                                          .arg(this->userName_);
-                        }
-                        else if (banReason == u"DMCA")
-                        {
-                            banText = QStringLiteral("%1 is banned due to DMCA violations")
-                                          .arg(this->userName_);
-                        }
-                        else if (banReason == u"DEACTIVATED")
-                        {
-                            const QString deletedAt = obj.value("deletedAt").toString();
-                            if (!deletedAt.isEmpty())
-                            {
-                                const auto deletedDt = QDateTime::fromString(
-                                    deletedAt, Qt::ISODateWithMs);
-                                const auto daysAgo = deletedDt.daysTo(
-                                    QDateTime::currentDateTimeUtc());
-                                banText = QStringLiteral(
-                                              "%1 deactivated their account %2 days ago")
-                                              .arg(this->userName_)
-                                              .arg(daysAgo);
-                            }
-                            else
-                            {
-                                banText = QStringLiteral("%1 deactivated their account")
-                                              .arg(this->userName_);
-                            }
-                        }
-                        this->ui_.banStatusLabel->setText(banText);
-
-                        // Populate fields from Tackling API for banned users
-                        const QString createdAt = obj.value("createdAt").toString();
-                        if (!createdAt.isEmpty())
-                        {
-                            const auto dt = QDateTime::fromString(createdAt, Qt::ISODateWithMs);
-                            this->ui_.createdDateLabel->setText(
-                                TEXT_CREATED.arg(dt.toString("yyyy-MM-dd")));
-                            this->ui_.createdDateLabel->setToolTip(
-                                formatLongFriendlyDuration(dt, QDateTime::currentDateTimeUtc()) +
-                                u" ago"_s);
-                            this->ui_.createdDateLabel->setMouseTracking(true);
-                        }
-
-                        const QString userId = obj.value("id").toString();
-                        if (!userId.isEmpty())
-                        {
-                            this->ui_.userIDLabel->setText(TEXT_USER_ID % userId);
-                            this->ui_.userIDLabel->setProperty("copy-text", userId);
-                        }
-
-                        const QString displayName = obj.value("displayName").toString();
-                        const QString chatColor = obj.value("chatColor").toString();
-                        const QColor nameColor = chatColor.isEmpty() ? QColor(Qt::white)
-                                                                     : QColor(chatColor);
-
-                        if (!displayName.isEmpty())
-                        {
-                            this->ui_.nameLabel->setText(displayName);
-                            this->ui_.nameLabel->setProperty("copy-text", displayName);
-                        }
-                        auto palette = this->ui_.nameLabel->palette();
-                        palette.setColor(QPalette::WindowText, nameColor);
-                        this->ui_.nameLabel->setPalette(palette);
-
-                        // Do not show Global Badges for banned users
-                        this->ui_.globalBadgesLabel->setText("");
+                        this->ui_.followerCountLabel->setText(
+                            QStringLiteral("Followers: %1").arg(followers));
                     }
                     else
                     {
-                        // Show Global Badges only for active (non-banned) users
+                        this->ui_.followerCountLabel->setText(
+                            TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
+                    }
+
+                    const bool isBanned = obj.value("banned").toBool();
+                    const QString banReason = obj.value("banReason").toString();
+
+                    QString banText =
+                        QStringLiteral("%1 is banned").arg(this->userName_);
+
+                    if (isBanned)
+                    {
+                        if (banReason == u"TOS_TEMPORARY")
+                        {
+                            banText =
+                                QStringLiteral("%1 is temporarily banned")
+                                    .arg(this->userName_);
+                        }
+                        else if (banReason == u"TOS_INDEFINITE")
+                        {
+                            banText =
+                                QStringLiteral("%1 is indefinitely banned")
+                                    .arg(this->userName_);
+                        }
+                        else if (banReason == u"DMCA")
+                        {
+                            banText =
+                                QStringLiteral("%1 is banned due to DMCA violations")
+                                    .arg(this->userName_);
+                        }
+                        else if (banReason == u"DEACTIVATED")
+                        {
+                            const QString deletedAt =
+                                obj.value("deletedAt").toString();
+
+                            if (!deletedAt.isEmpty())
+                            {
+                                const auto deletedDt =
+                                    QDateTime::fromString(
+                                        deletedAt,
+                                        Qt::ISODateWithMs);
+
+                                if (deletedDt.isValid())
+                                {
+                                    const auto daysAgo =
+                                        deletedDt.daysTo(
+                                            QDateTime::currentDateTimeUtc());
+
+                                    banText =
+                                        QStringLiteral(
+                                            "%1 deactivated their account %2 days ago")
+                                            .arg(this->userName_)
+                                            .arg(daysAgo);
+                                }
+                            }
+                            else
+                            {
+                                banText =
+                                    QStringLiteral(
+                                        "%1 deactivated their account")
+                                        .arg(this->userName_);
+                            }
+                        }
+
+                        this->ui_.banStatusLabel->setText(banText);
+                    }
+                    else
+                    {
                         this->ui_.globalBadgesLabel->setText(
                             globalBadges > 0
                                 ? QStringLiteral("Global Badges: %1").arg(globalBadges)
-                                : QStringLiteral(""));
+                                : QString());
                     }
 
-                    const auto roles = rolesFromTacklingUserInfo(
-                        obj.value("roles").toObject());
+                    const auto roles =
+                        rolesFromTacklingUserInfo(
+                            obj.value("roles").toObject());
+
                     this->ui_.rolesLabel->setText(roles.join(", "));
 
                     const auto stream = obj.value("stream");
@@ -1299,8 +1025,10 @@ void UserInfoPopup::updateUserData()
                     }
 
                     const auto streamObj = stream.toObject();
-                    const auto previewUrl = normalizeStreamPreviewUrl(
-                        streamObj.value("previewImageURL").toString());
+                    const auto previewUrl =
+                        normalizeStreamPreviewUrl(
+                            streamObj.value("previewImageURL").toString());
+
                     if (previewUrl.isEmpty())
                     {
                         return;
@@ -1310,40 +1038,41 @@ void UserInfoPopup::updateUserData()
                         .caller(this)
                         .followRedirects(true)
                         .onSuccess([this, hack, userID](auto imageResult) {
-                            if (!hack.lock() || this->userId_ != userID ||
+                            if (!hack.lock() ||
+                                this->userId_ != userID ||
                                 imageResult.status() != 200)
                             {
                                 return;
                             }
 
-                            const auto thumbnail = QString::fromLatin1(
-                                imageResult.getData().toBase64());
+                            const auto thumbnail =
+                                imageResult.getData().toBase64();
+
                             const auto tooltip =
-                                QStringLiteral("<p style=\"text-align: "
-                                               "center;\"><img "
-                                               "height=\"203\" "
-                                               "src=\"data:image/jpg;"
-                                               "base64, ") %
-                                thumbnail % QStringLiteral("\"></p>");
+                                QString(
+                                    "<p style=\"text-align:center;\"><img height=\"203\" src=\"data:image/jpg;base64,%1\"></p>")
+                                    .arg(QString::fromLatin1(thumbnail));
 
                             this->ui_.nameLabel->setToolTip(tooltip);
                             this->ui_.nameLabel->setMouseTracking(true);
+
                             this->ui_.localizedNameLabel->setToolTip(tooltip);
-                            this->ui_.localizedNameLabel->setMouseTracking(
-                                true);
+                            this->ui_.localizedNameLabel->setMouseTracking(true);
                         })
                         .execute();
                 })
-                .onError([this, hack](auto /*result*/) {
+                .onError([this, hack](auto) {
                     if (!hack.lock())
                     {
                         return;
                     }
+
                     this->ui_.followerCountLabel->setText(
                         TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
                 })
                 .execute();
-        }
+        };
+}
 
         getHelix()->getStreamById(
             user.id,
