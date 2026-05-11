@@ -1248,24 +1248,52 @@ void UserInfoPopup::updateUserData()
                             }
                         }
                         this->ui_.banStatusLabel->setText(banText);
-                    }
 
-                    this->ui_.followerCountLabel->setText(
-                        TEXT_FOLLOWERS.arg(localizeNumbers(followers)) +
-                        QStringLiteral(" - Following: %1")
-                            .arg(localizeNumbers(follows)));
+                        // Populate fields from Tackling API since Helix
+                        // won't return data for banned users
+                        const QString createdAt =
+                            obj.value("createdAt").toString();
+                        if (!createdAt.isEmpty())
+                        {
+                            const auto dt = QDateTime::fromString(
+                                createdAt, Qt::ISODateWithMs);
+                            this->ui_.createdDateLabel->setText(
+                                TEXT_CREATED.arg(
+                                    dt.toString("yyyy-MM-dd")));
+                            this->ui_.createdDateLabel->setToolTip(
+                                formatLongFriendlyDuration(
+                                    dt,
+                                    QDateTime::currentDateTimeUtc()) +
+                                u" ago"_s);
+                            this->ui_.createdDateLabel->setMouseTracking(
+                                true);
+                        }
 
-                    this->ui_.globalBadgesLabel->setText(
-                        QStringLiteral("Global Badges: %1")
-                            .arg(localizeNumbers(globalBadges)));
+                        const QString userId = obj.value("id").toString();
+                        if (!userId.isEmpty())
+                        {
+                            this->ui_.userIDLabel->setText(TEXT_USER_ID %
+                                                           userId);
+                            this->ui_.userIDLabel->setProperty("copy-text",
+                                                               userId);
+                        }
 
-                    if (!updatedAt.isEmpty())
-                    {
-                        const auto dt =
-                            QDateTime::fromString(updatedAt, Qt::ISODateWithMs);
-                        this->ui_.updatedAtLabel->setText(
-                            QStringLiteral("Updated: %1")
-                                .arg(dt.toString("yyyy-MM-dd hh:mm")));
+                        const QString displayName =
+                            obj.value("displayName").toString();
+                        const QString chatColor =
+                            obj.value("chatColor").toString();
+                        const QColor nameColor =
+                            chatColor.isEmpty() ? QColor(Qt::white)
+                                                : QColor(chatColor);
+                        if (!displayName.isEmpty())
+                        {
+                            this->ui_.nameLabel->setText(displayName);
+                            this->ui_.nameLabel->setProperty("copy-text",
+                                                             displayName);
+                        }
+                        auto palette = this->ui_.nameLabel->palette();
+                        palette.setColor(QPalette::WindowText, nameColor);
+                        this->ui_.nameLabel->setPalette(palette);
                     }
 
                     const auto roles = rolesFromTacklingUserInfo(

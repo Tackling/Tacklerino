@@ -18,7 +18,7 @@ Version::Version()
     , dateOfBuild_(QStringLiteral(CHATTERINO_CMAKE_GEN_DATE))
     , isNightly_(CHATTERINO_NIGHTLY_BUILD == 1)
 {
-    this->fullVersion_ = "Technorino ";
+    this->fullVersion_ = "Tacklerino ";
     if (this->isNightly())
     {
         this->fullVersion_ += "Nightly ";
@@ -140,7 +140,7 @@ void Version::generateBuildString()
     // Add commit information
     s +=
         QString(
-            R"( (commit <a href="https://github.com/2547techno/technorino/commit/%1">%1</a>)")
+            R"( (commit <a href="https://github.com/Tackling/Tacklerino/commit/%1">%1</a>)")
             .arg(this->commitHash());
     if (this->isModified())
     {

@@ -1,3 +1,19 @@
+Probably not the best, but it works. I'll add more when I think of it.
+
+What I've added:
+
+- Chatters list works for all users, not just mods.
+
+- User info popup also shows following count, global badge count, updatedAt date, and more roles.
+
+- Automatically retries failed channel joins, while skipping suspended channels.
+
+- User info popup displays ban status for banned/deactivated users, including ban reason.
+
+---
+
+Technorino:
+
 just a fork of features i like from other forks + my own features :)
 
 Features taken from:
