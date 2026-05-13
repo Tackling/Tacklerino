@@ -647,15 +647,13 @@ std::unique_ptr<QMenu> SplitHeader::createMainMenu()
     {
         moreMenu->addAction(
             "Show chatter list",
-            h->getDisplaySequence(HotkeyCategory::Split,
-                                  "openViewerList"),
+            h->getDisplaySequence(HotkeyCategory::Split, "openViewerList"),
             this->split_, &Split::openChatterList);
 
-        moreMenu->addAction(
-            "Subscribe",
-            h->getDisplaySequence(HotkeyCategory::Split,
-                                  "openSubscriptionPage"),
-            this->split_, &Split::openSubPage);
+        moreMenu->addAction("Subscribe",
+                            h->getDisplaySequence(HotkeyCategory::Split,
+                                                  "openSubscriptionPage"),
+                            this->split_, &Split::openSubPage);
 
         {
             auto *action = new QAction(this);

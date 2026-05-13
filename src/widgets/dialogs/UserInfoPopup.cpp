@@ -835,354 +835,336 @@ void UserInfoPopup::updateUserData()
 
         this->ui_.followerCountLabel->setText(
             TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
-        this->ui_.createdDateLabel->setText(
-            TEXT_CREATED.arg(TEXT_UNAVAILABLE));
+        this->ui_.createdDateLabel->setText(TEXT_CREATED.arg(TEXT_UNAVAILABLE));
 
         this->ui_.nameLabel->setText(this->userName_);
 
         this->ui_.userIDLabel->setText(u"ID " % TEXT_UNAVAILABLE);
-        this->ui_.userIDLabel->setProperty(
-            "copy-text",
-            TEXT_UNAVAILABLE.toString());
+        this->ui_.userIDLabel->setProperty("copy-text",
+                                           TEXT_UNAVAILABLE.toString());
     };
 
-    const auto onUserFetched =
-        [this, hack, currentUser](const HelixUser &user) {
-            if (!hack.lock())
-            {
-                return;
-            }
+    const auto onUserFetched = [this, hack,
+                                currentUser](const HelixUser &user) {
+        if (!hack.lock())
+        {
+            return;
+        }
 
-            if (this->userName_.isEmpty())
-            {
-                this->userName_ = user.login;
-                this->ui_.nameLabel->setText(user.login);
-                this->updateLatestMessages();
-            }
+        if (this->userName_.isEmpty())
+        {
+            this->userName_ = user.login;
+            this->ui_.nameLabel->setText(user.login);
+            this->updateLatestMessages();
+        }
 
-            this->userId_ = user.id;
-            this->helixAvatarUrl_ = user.profileImageUrl;
-            this->updateAvatarUrl();
-            this->updateNotes();
+        this->userId_ = user.id;
+        this->helixAvatarUrl_ = user.profileImageUrl;
+        this->updateAvatarUrl();
+        this->updateNotes();
 
-            if (user.displayName.toLower() != user.login)
-            {
-                this->ui_.localizedNameLabel->setText(user.displayName);
-                this->ui_.localizedNameLabel->setProperty(
-                    "copy-text",
-                    user.displayName);
-                this->ui_.localizedNameLabel->setVisible(true);
-                this->ui_.localizedNameCopyButton->setVisible(true);
-            }
-            else
-            {
-                this->ui_.nameLabel->setText(user.displayName);
-                this->ui_.nameLabel->setProperty(
-                    "copy-text",
-                    user.displayName);
-            }
+        if (user.displayName.toLower() != user.login)
+        {
+            this->ui_.localizedNameLabel->setText(user.displayName);
+            this->ui_.localizedNameLabel->setProperty("copy-text",
+                                                      user.displayName);
+            this->ui_.localizedNameLabel->setVisible(true);
+            this->ui_.localizedNameCopyButton->setVisible(true);
+        }
+        else
+        {
+            this->ui_.nameLabel->setText(user.displayName);
+            this->ui_.nameLabel->setProperty("copy-text", user.displayName);
+        }
 
-            this->setWindowTitle(
-                TEXT_TITLE.arg(user.displayName,
-                               this->underlyingChannel_->getName()));
+        this->setWindowTitle(TEXT_TITLE.arg(
+            user.displayName, this->underlyingChannel_->getName()));
 
-            this->ui_.createdDateLabel->setText(
-                TEXT_CREATED.arg(user.createdAt.section("T", 0, 0)));
+        this->ui_.createdDateLabel->setText(
+            TEXT_CREATED.arg(user.createdAt.section("T", 0, 0)));
 
-            this->ui_.createdDateLabel->setToolTip(
-                formatLongFriendlyDuration(
-                    QDateTime::fromString(user.createdAt, Qt::ISODateWithMs),
-                    QDateTime::currentDateTimeUtc()) +
-                u" ago"_s);
+        this->ui_.createdDateLabel->setToolTip(
+            formatLongFriendlyDuration(
+                QDateTime::fromString(user.createdAt, Qt::ISODateWithMs),
+                QDateTime::currentDateTimeUtc()) +
+            u" ago"_s);
 
-            this->ui_.createdDateLabel->setMouseTracking(true);
+        this->ui_.createdDateLabel->setMouseTracking(true);
 
-            this->ui_.userIDLabel->setText(TEXT_USER_ID % user.id);
-            this->ui_.userIDLabel->setProperty("copy-text", user.id);
+        this->ui_.userIDLabel->setText(TEXT_USER_ID % user.id);
+        this->ui_.userIDLabel->setProperty("copy-text", user.id);
 
-            if (getApp()->getStreamerMode()->isEnabled() &&
-                getSettings()->streamerModeHideUsercardAvatars)
-            {
-                this->ui_.avatarButton->setPixmap(
-                    getResources().streamerMode);
-            }
-            else
-            {
-                this->loadAvatar(user.id, user.profileImageUrl, false);
-            }
+        if (getApp()->getStreamerMode()->isEnabled() &&
+            getSettings()->streamerModeHideUsercardAvatars)
+        {
+            this->ui_.avatarButton->setPixmap(getResources().streamerMode);
+        }
+        else
+        {
+            this->loadAvatar(user.id, user.profileImageUrl, false);
+        }
 
-            this->ui_.nameLabel->setToolTip({});
-            this->ui_.localizedNameLabel->setToolTip({});
+        this->ui_.nameLabel->setToolTip({});
+        this->ui_.localizedNameLabel->setToolTip({});
 
-            const QString apiUrl =
-                QStringLiteral("https://api.tackling.cc/twitch/UserInfo?id=%1")
-                    .arg(user.id);
+        const QString apiUrl =
+            QStringLiteral("https://api.tackling.cc/twitch/UserInfo?id=%1")
+                .arg(user.id);
 
-            NetworkRequest(apiUrl)
-                .caller(this)
-                .onSuccess([this, hack, userID = user.id](auto result) {
-                    if (!hack.lock() || this->userId_ != userID)
-                    {
-                        return;
-                    }
+        NetworkRequest(apiUrl)
+            .caller(this)
+            .onSuccess([this, hack, userID = user.id](auto result) {
+                if (!hack.lock() || this->userId_ != userID)
+                {
+                    return;
+                }
 
-                    const auto obj = result.parseJson();
+                const auto obj = result.parseJson();
 
-                    const int followers = obj.value("followers").toInt(-1);
-                    const int globalBadges = obj.value("globalBadges").toInt();
+                const int followers = obj.value("followers").toInt(-1);
+                const int globalBadges = obj.value("globalBadges").toInt();
 
-                    if (followers >= 0)
-                    {
-                        this->ui_.followerCountLabel->setText(
-                            QStringLiteral("Followers: %1").arg(followers));
-                    }
-                    else
-                    {
-                        this->ui_.followerCountLabel->setText(
-                            TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
-                    }
-
-                    const bool isBanned = obj.value("banned").toBool();
-                    const QString banReason = obj.value("banReason").toString();
-
-                    QString banText =
-                        QStringLiteral("%1 is banned").arg(this->userName_);
-
-                    if (isBanned)
-                    {
-                        if (banReason == u"TOS_TEMPORARY")
-                        {
-                            banText =
-                                QStringLiteral("%1 is temporarily banned")
-                                    .arg(this->userName_);
-                        }
-                        else if (banReason == u"TOS_INDEFINITE")
-                        {
-                            banText =
-                                QStringLiteral("%1 is indefinitely banned")
-                                    .arg(this->userName_);
-                        }
-                        else if (banReason == u"DMCA")
-                        {
-                            banText =
-                                QStringLiteral("%1 is banned due to DMCA violations")
-                                    .arg(this->userName_);
-                        }
-                        else if (banReason == u"DEACTIVATED")
-                        {
-                            const QString deletedAt =
-                                obj.value("deletedAt").toString();
-
-                            if (!deletedAt.isEmpty())
-                            {
-                                const auto deletedDt =
-                                    QDateTime::fromString(
-                                        deletedAt,
-                                        Qt::ISODateWithMs);
-
-                                if (deletedDt.isValid())
-                                {
-                                    const auto daysAgo =
-                                        deletedDt.daysTo(
-                                            QDateTime::currentDateTimeUtc());
-
-                                    banText =
-                                        QStringLiteral(
-                                            "%1 deactivated their account %2 days ago")
-                                            .arg(this->userName_)
-                                            .arg(daysAgo);
-                                }
-                            }
-                            else
-                            {
-                                banText =
-                                    QStringLiteral(
-                                        "%1 deactivated their account")
-                                        .arg(this->userName_);
-                            }
-                        }
-
-                        this->ui_.banStatusLabel->setText(banText);
-                    }
-                    else
-                    {
-                        this->ui_.globalBadgesLabel->setText(
-                            globalBadges > 0
-                                ? QStringLiteral("Global Badges: %1").arg(globalBadges)
-                                : QString());
-                    }
-
-                    const auto roles =
-                        rolesFromTacklingUserInfo(
-                            obj.value("roles").toObject());
-
-                    this->ui_.rolesLabel->setText(roles.join(", "));
-
-                    const auto stream = obj.value("stream");
-                    if (!stream.isObject())
-                    {
-                        return;
-                    }
-
-                    const auto streamObj = stream.toObject();
-                    const auto previewUrl =
-                        normalizeStreamPreviewUrl(
-                            streamObj.value("previewImageURL").toString());
-
-                    if (previewUrl.isEmpty())
-                    {
-                        return;
-                    }
-
-                    NetworkRequest(previewUrl, NetworkRequestType::Get)
-                        .caller(this)
-                        .followRedirects(true)
-                        .onSuccess([this, hack, userID](auto imageResult) {
-                            if (!hack.lock() ||
-                                this->userId_ != userID ||
-                                imageResult.status() != 200)
-                            {
-                                return;
-                            }
-
-                            const auto thumbnail =
-                                imageResult.getData().toBase64();
-
-                            const auto tooltip =
-                                QString(
-                                    "<p style=\"text-align:center;\"><img height=\"203\" src=\"data:image/jpg;base64,%1\"></p>")
-                                    .arg(QString::fromLatin1(thumbnail));
-
-                            this->ui_.nameLabel->setToolTip(tooltip);
-                            this->ui_.nameLabel->setMouseTracking(true);
-
-                            this->ui_.localizedNameLabel->setToolTip(tooltip);
-                            this->ui_.localizedNameLabel->setMouseTracking(true);
-                        })
-                        .execute();
-                })
-                .onError([this, hack](auto) {
-                    if (!hack.lock())
-                    {
-                        return;
-                    }
-
+                if (followers >= 0)
+                {
+                    this->ui_.followerCountLabel->setText(
+                        QStringLiteral("Followers: %1").arg(followers));
+                }
+                else
+                {
                     this->ui_.followerCountLabel->setText(
                         TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
-                })
-                .execute();
-        };
+                }
 
-        getHelix()->getStreamById(
-            user.id,
-            [this, hack](bool isLive, const auto &stream) {
+                const bool isBanned = obj.value("banned").toBool();
+                const QString banReason = obj.value("banReason").toString();
+
+                QString banText =
+                    QStringLiteral("%1 is banned").arg(this->userName_);
+
+                if (isBanned)
+                {
+                    if (banReason == u"TOS_TEMPORARY")
+                    {
+                        banText = QStringLiteral("%1 is temporarily banned")
+                                      .arg(this->userName_);
+                    }
+                    else if (banReason == u"TOS_INDEFINITE")
+                    {
+                        banText = QStringLiteral("%1 is indefinitely banned")
+                                      .arg(this->userName_);
+                    }
+                    else if (banReason == u"DMCA")
+                    {
+                        banText = QStringLiteral(
+                                      "%1 is banned due to DMCA violations")
+                                      .arg(this->userName_);
+                    }
+                    else if (banReason == u"DEACTIVATED")
+                    {
+                        const QString deletedAt =
+                            obj.value("deletedAt").toString();
+
+                        if (!deletedAt.isEmpty())
+                        {
+                            const auto deletedDt = QDateTime::fromString(
+                                deletedAt, Qt::ISODateWithMs);
+
+                            if (deletedDt.isValid())
+                            {
+                                const auto daysAgo = deletedDt.daysTo(
+                                    QDateTime::currentDateTimeUtc());
+
+                                banText = QStringLiteral("%1 deactivated their "
+                                                         "account %2 days ago")
+                                              .arg(this->userName_)
+                                              .arg(daysAgo);
+                            }
+                        }
+                        else
+                        {
+                            banText =
+                                QStringLiteral("%1 deactivated their account")
+                                    .arg(this->userName_);
+                        }
+                    }
+
+                    this->ui_.banStatusLabel->setText(banText);
+                }
+                else
+                {
+                    this->ui_.globalBadgesLabel->setText(
+                        globalBadges > 0 ? QStringLiteral("Global Badges: %1")
+                                               .arg(globalBadges)
+                                         : QString());
+                }
+
+                const auto roles =
+                    rolesFromTacklingUserInfo(obj.value("roles").toObject());
+
+                this->ui_.rolesLabel->setText(roles.join(", "));
+
+                const auto stream = obj.value("stream");
+                if (!stream.isObject())
+                {
+                    return;
+                }
+
+                const auto streamObj = stream.toObject();
+                const auto previewUrl = normalizeStreamPreviewUrl(
+                    streamObj.value("previewImageURL").toString());
+
+                if (previewUrl.isEmpty())
+                {
+                    return;
+                }
+
+                NetworkRequest(previewUrl, NetworkRequestType::Get)
+                    .caller(this)
+                    .followRedirects(true)
+                    .onSuccess([this, hack, userID](auto imageResult) {
+                        if (!hack.lock() || this->userId_ != userID ||
+                            imageResult.status() != 200)
+                        {
+                            return;
+                        }
+
+                        const auto thumbnail = imageResult.getData().toBase64();
+
+                        const auto tooltip =
+                            QString("<p style=\"text-align:center;\"><img "
+                                    "height=\"203\" "
+                                    "src=\"data:image/jpg;base64,%1\"></p>")
+                                .arg(QString::fromLatin1(thumbnail));
+
+                        this->ui_.nameLabel->setToolTip(tooltip);
+                        this->ui_.nameLabel->setMouseTracking(true);
+
+                        this->ui_.localizedNameLabel->setToolTip(tooltip);
+                        this->ui_.localizedNameLabel->setMouseTracking(true);
+                    })
+                    .execute();
+            })
+            .onError([this, hack](auto) {
                 if (!hack.lock())
                 {
                     return;
                 }
 
-                if (isLive)
-                {
-                    this->ui_.liveIndicator->setViewers(stream.viewerCount);
-                    this->ui_.liveIndicator->show();
-                }
-                else
-                {
-                    this->ui_.liveIndicator->hide();
-                }
-            },
-            [id{user.id}]() {
-                qCWarning(chatterinoWidget)
-                    << "Failed to get stream for user ID" << id;
-            },
-            []() {});
+                this->ui_.followerCountLabel->setText(
+                    TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
+            })
+            .execute();
+    };
 
-        // get ignore state
-        bool isIgnoring = currentUser->blockedUserIds().contains(user.id);
-
-        // get ignoreHighlights state
-        bool isIgnoringHighlights = false;
-        const auto &vector = getSettings()->blacklistedUsers.raw();
-        for (const auto &blockedUser : vector)
-        {
-            if (this->userName_ == blockedUser.getPattern())
+    getHelix()->getStreamById(
+        user.id,
+        [this, hack](bool isLive, const auto &stream) {
+            if (!hack.lock())
             {
-                isIgnoringHighlights = true;
-                break;
+                return;
             }
-        }
-        if (getSettings()->isBlacklistedUser(this->userName_) &&
-            !isIgnoringHighlights)
+
+            if (isLive)
+            {
+                this->ui_.liveIndicator->setViewers(stream.viewerCount);
+                this->ui_.liveIndicator->show();
+            }
+            else
+            {
+                this->ui_.liveIndicator->hide();
+            }
+        },
+        [id{user.id}]() {
+            qCWarning(chatterinoWidget)
+                << "Failed to get stream for user ID" << id;
+        },
+        []() {});
+
+    // get ignore state
+    bool isIgnoring = currentUser->blockedUserIds().contains(user.id);
+
+    // get ignoreHighlights state
+    bool isIgnoringHighlights = false;
+    const auto &vector = getSettings()->blacklistedUsers.raw();
+    for (const auto &blockedUser : vector)
+    {
+        if (this->userName_ == blockedUser.getPattern())
         {
-            this->ui_.ignoreHighlights->setToolTip("Name matched by regex");
+            isIgnoringHighlights = true;
+            break;
         }
-        else
-        {
-            this->ui_.ignoreHighlights->setEnabled(true);
-        }
-        this->ui_.block->setChecked(isIgnoring);
-        this->ui_.block->setEnabled(true);
-        this->ui_.ignoreHighlights->setChecked(isIgnoringHighlights);
-        this->ui_.notesAdd->setEnabled(true);
+    }
+    if (getSettings()->isBlacklistedUser(this->userName_) &&
+        !isIgnoringHighlights)
+    {
+        this->ui_.ignoreHighlights->setToolTip("Name matched by regex");
+    }
+    else
+    {
+        this->ui_.ignoreHighlights->setEnabled(true);
+    }
+    this->ui_.block->setChecked(isIgnoring);
+    this->ui_.block->setEnabled(true);
+    this->ui_.ignoreHighlights->setChecked(isIgnoringHighlights);
+    this->ui_.notesAdd->setEnabled(true);
 
-        auto type = this->underlyingChannel_->getType();
+    auto type = this->underlyingChannel_->getType();
 
-        if (type == Channel::Type::Twitch)
-        {
-            // get followage and subage
-            getIvr()->getSubage(
-                this->userName_, this->underlyingChannel_->getName(),
-                [this, hack](const IvrSubage &subageInfo) {
-                    if (!hack.lock())
-                    {
-                        return;
-                    }
+    if (type == Channel::Type::Twitch)
+    {
+        // get followage and subage
+        getIvr()->getSubage(
+            this->userName_, this->underlyingChannel_->getName(),
+            [this, hack](const IvrSubage &subageInfo) {
+                if (!hack.lock())
+                {
+                    return;
+                }
 
-                    if (!subageInfo.followingSince.isEmpty())
-                    {
-                        QDateTime followedAt = QDateTime::fromString(
-                            subageInfo.followingSince, Qt::ISODate);
-                        QString followingSince =
-                            followedAt.toString("yyyy-MM-dd");
-                        this->ui_.followageLabel->setText("❤ Following since " +
-                                                          followingSince);
-                        this->ui_.followageLabel->setToolTip(
-                            formatLongFriendlyDuration(
-                                followedAt, QDateTime::currentDateTimeUtc()) +
-                            u" ago"_s);
-                        this->ui_.followageLabel->setMouseTracking(true);
-                    }
+                if (!subageInfo.followingSince.isEmpty())
+                {
+                    QDateTime followedAt = QDateTime::fromString(
+                        subageInfo.followingSince, Qt::ISODate);
+                    QString followingSince = followedAt.toString("yyyy-MM-dd");
+                    this->ui_.followageLabel->setText("❤ Following since " +
+                                                      followingSince);
+                    this->ui_.followageLabel->setToolTip(
+                        formatLongFriendlyDuration(
+                            followedAt, QDateTime::currentDateTimeUtc()) +
+                        u" ago"_s);
+                    this->ui_.followageLabel->setMouseTracking(true);
+                }
 
-                    if (subageInfo.isSubHidden)
-                    {
-                        this->ui_.subageLabel->setText(
-                            "Subscription status hidden");
-                    }
-                    else if (subageInfo.isSubbed)
-                    {
-                        this->ui_.subageLabel->setText(
-                            QString("★ Tier %1 - Subscribed for %2 months")
-                                .arg(subageInfo.subTier)
-                                .arg(subageInfo.totalSubMonths));
-                    }
-                    else if (subageInfo.totalSubMonths)
-                    {
-                        this->ui_.subageLabel->setText(
-                            QString("★ Previously subscribed for %1 months")
-                                .arg(subageInfo.totalSubMonths));
-                    }
-                },
-                [] {});
-        }
+                if (subageInfo.isSubHidden)
+                {
+                    this->ui_.subageLabel->setText(
+                        "Subscription status hidden");
+                }
+                else if (subageInfo.isSubbed)
+                {
+                    this->ui_.subageLabel->setText(
+                        QString("★ Tier %1 - Subscribed for %2 months")
+                            .arg(subageInfo.subTier)
+                            .arg(subageInfo.totalSubMonths));
+                }
+                else if (subageInfo.totalSubMonths)
+                {
+                    this->ui_.subageLabel->setText(
+                        QString("★ Previously subscribed for %1 months")
+                            .arg(subageInfo.totalSubMonths));
+                }
+            },
+            [] {});
+    }
 
-        // get pronouns
-        if (getSettings()->showPronouns)
-        {
-            getApp()->getPronouns()->getUserPronoun(
-                user.login,
-                [this, hack](const auto userPronoun) {
-                    runInGuiThread([this, hack,
-                                    userPronoun = std::move(userPronoun)]() {
+    // get pronouns
+    if (getSettings()->showPronouns)
+    {
+        getApp()->getPronouns()->getUserPronoun(
+            user.login,
+            [this, hack](const auto userPronoun) {
+                runInGuiThread(
+                    [this, hack, userPronoun = std::move(userPronoun)]() {
                         if (!hack.lock() || this->ui_.pronounsLabel == nullptr)
                         {
                             return;
@@ -1198,20 +1180,20 @@ void UserInfoPopup::updateUserData()
                                 TEXT_PRONOUNS.arg(TEXT_UNSPECIFIED));
                         }
                     });
-                },
-                [this, hack]() {
-                    runInGuiThread([this, hack]() {
-                        qCWarning(chatterinoTwitch) << "Error getting pronouns";
-                        if (!hack.lock())
-                        {
-                            return;
-                        }
-                        this->ui_.pronounsLabel->setText(
-                            TEXT_PRONOUNS.arg(TEXT_UNSPECIFIED));
-                    });
+            },
+            [this, hack]() {
+                runInGuiThread([this, hack]() {
+                    qCWarning(chatterinoTwitch) << "Error getting pronouns";
+                    if (!hack.lock())
+                    {
+                        return;
+                    }
+                    this->ui_.pronounsLabel->setText(
+                        TEXT_PRONOUNS.arg(TEXT_UNSPECIFIED));
                 });
-        }
-    };
+            });
+    }
+};
 
     if (!this->userId_.isEmpty())
     {
