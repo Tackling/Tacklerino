@@ -1176,7 +1176,145 @@ void UserInfoPopup::updateUserData()
                 });
             });
     }
-};
+
+        getHelix()->getStreamById(
+            user.id,
+            [this, hack](bool isLive, const auto &stream) {
+                if (!hack.lock())
+                {
+                    return;
+                }
+
+                if (isLive)
+                {
+                    this->ui_.liveIndicator->setViewers(stream.viewerCount);
+                    this->ui_.liveIndicator->show();
+                }
+                else
+                {
+                    this->ui_.liveIndicator->hide();
+                }
+            },
+            [id{user.id}]() {
+                qCWarning(chatterinoWidget)
+                    << "Failed to get stream for user ID" << id;
+            },
+            []() {});
+
+        // get ignore state
+        bool isIgnoring = currentUser->blockedUserIds().contains(user.id);
+
+        // get ignoreHighlights state
+        bool isIgnoringHighlights = false;
+        const auto &vector = getSettings()->blacklistedUsers.raw();
+        for (const auto &blockedUser : vector)
+        {
+            if (this->userName_ == blockedUser.getPattern())
+            {
+                isIgnoringHighlights = true;
+                break;
+            }
+        }
+        if (getSettings()->isBlacklistedUser(this->userName_) &&
+            !isIgnoringHighlights)
+        {
+            this->ui_.ignoreHighlights->setToolTip("Name matched by regex");
+        }
+        else
+        {
+            this->ui_.ignoreHighlights->setEnabled(true);
+        }
+        this->ui_.block->setChecked(isIgnoring);
+        this->ui_.block->setEnabled(true);
+        this->ui_.ignoreHighlights->setChecked(isIgnoringHighlights);
+        this->ui_.notesAdd->setEnabled(true);
+
+        auto type = this->underlyingChannel_->getType();
+
+        if (type == Channel::Type::Twitch)
+        {
+            // get followage and subage
+            getIvr()->getSubage(
+                this->userName_, this->underlyingChannel_->getName(),
+                [this, hack](const IvrSubage &subageInfo) {
+                    if (!hack.lock())
+                    {
+                        return;
+                    }
+
+                    if (!subageInfo.followingSince.isEmpty())
+                    {
+                        QDateTime followedAt = QDateTime::fromString(
+                            subageInfo.followingSince, Qt::ISODate);
+                        QString followingSince = followedAt.toString("yyyy-MM-dd");
+                        this->ui_.followageLabel->setText("❤ Following since " +
+                                                          followingSince);
+                        this->ui_.followageLabel->setToolTip(
+                            formatLongFriendlyDuration(
+                                followedAt, QDateTime::currentDateTimeUtc()) +
+                            u" ago"_s);
+                        this->ui_.followageLabel->setMouseTracking(true);
+                    }
+
+                    if (subageInfo.isSubHidden)
+                    {
+                        this->ui_.subageLabel->setText(
+                            "Subscription status hidden");
+                    }
+                    else if (subageInfo.isSubbed)
+                    {
+                        this->ui_.subageLabel->setText(
+                            QString("★ Tier %1 - Subscribed for %2 months")
+                                .arg(subageInfo.subTier)
+                                .arg(subageInfo.totalSubMonths));
+                    }
+                    else if (subageInfo.totalSubMonths)
+                    {
+                        this->ui_.subageLabel->setText(
+                            QString("★ Previously subscribed for %1 months")
+                                .arg(subageInfo.totalSubMonths));
+                    }
+                },
+                [] {});
+        }
+
+        // get pronouns
+        if (getSettings()->showPronouns)
+        {
+            getApp()->getPronouns()->getUserPronoun(
+                user.login,
+                [this, hack](const auto userPronoun) {
+                    runInGuiThread([this, hack,
+                                    userPronoun = std::move(userPronoun)]() {
+                        if (!hack.lock() || this->ui_.pronounsLabel == nullptr)
+                        {
+                            return;
+                        }
+                        if (!userPronoun.isUnspecified())
+                        {
+                            this->ui_.pronounsLabel->setText(
+                                TEXT_PRONOUNS.arg(userPronoun.format()));
+                        }
+                        else
+                        {
+                            this->ui_.pronounsLabel->setText(
+                                TEXT_PRONOUNS.arg(TEXT_UNSPECIFIED));
+                        }
+                    });
+                },
+                [this, hack]() {
+                    runInGuiThread([this, hack]() {
+                        qCWarning(chatterinoTwitch) << "Error getting pronouns";
+                        if (!hack.lock())
+                        {
+                            return;
+                        }
+                        this->ui_.pronounsLabel->setText(
+                            TEXT_PRONOUNS.arg(TEXT_UNSPECIFIED));
+                    });
+                });
+        }
+    };
 
     const auto onUserFetchFailed = [this, hack] {
         if (!hack.lock())
