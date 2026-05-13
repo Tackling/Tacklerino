@@ -1072,7 +1072,6 @@ void UserInfoPopup::updateUserData()
                 })
                 .execute();
         };
-}
 
         getHelix()->getStreamById(
             user.id,
