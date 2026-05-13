@@ -827,23 +827,6 @@ void UserInfoPopup::updateUserData()
     std::weak_ptr<bool> hack = this->lifetimeHack_;
     auto currentUser = getApp()->getAccounts()->twitch.getCurrent();
 
-    const auto onUserFetchFailed = [this, hack] {
-        if (!hack.lock())
-        {
-            return;
-        }
-
-        this->ui_.followerCountLabel->setText(
-            TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
-        this->ui_.createdDateLabel->setText(TEXT_CREATED.arg(TEXT_UNAVAILABLE));
-
-        this->ui_.nameLabel->setText(this->userName_);
-
-        this->ui_.userIDLabel->setText(u"ID " % TEXT_UNAVAILABLE);
-        this->ui_.userIDLabel->setProperty("copy-text",
-                                           TEXT_UNAVAILABLE.toString());
-    };
-
     const auto onUserFetched = [this, hack,
                                 currentUser](const HelixUser &user) {
         if (!hack.lock())
@@ -1194,6 +1177,23 @@ void UserInfoPopup::updateUserData()
             });
     }
 };
+
+    const auto onUserFetchFailed = [this, hack] {
+        if (!hack.lock())
+        {
+            return;
+        }
+
+        this->ui_.followerCountLabel->setText(
+            TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
+        this->ui_.createdDateLabel->setText(TEXT_CREATED.arg(TEXT_UNAVAILABLE));
+
+        this->ui_.nameLabel->setText(this->userName_);
+
+        this->ui_.userIDLabel->setText(u"ID " % TEXT_UNAVAILABLE);
+        this->ui_.userIDLabel->setProperty("copy-text",
+                                           TEXT_UNAVAILABLE.toString());
+    };
 
     if (!this->userId_.isEmpty())
     {
