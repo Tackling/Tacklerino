@@ -236,6 +236,8 @@ QStringList rolesFromTacklingUserInfo(const QJsonObject &roles)
     return rolesList;
 }
 
+}  // namespace
+
 QString normalizeStreamPreviewUrl(QString url)
 {
     return url.replace("{width}", "360").replace("{height}", "203");
