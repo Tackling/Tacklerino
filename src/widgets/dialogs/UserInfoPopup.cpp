@@ -1039,7 +1039,6 @@ void UserInfoPopup::updateUserData()
                     TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
             })
             .execute();
-    };
 
     getHelix()->getStreamById(
         user.id,
@@ -1178,6 +1177,7 @@ void UserInfoPopup::updateUserData()
                 });
             });
     }
+    };
 
     const auto onUserFetchFailed = [this, hack] {
         if (!hack.lock())
