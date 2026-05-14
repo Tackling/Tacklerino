@@ -981,13 +981,30 @@ void UserInfoPopup::updateUserData()
 
                 const auto obj = result.parseJson();
 
+                // Apply chat color to the display name labels
+                const QString chatColor = obj.value("chatColor").toString();
+                if (!chatColor.isEmpty())
+                {
+                    const QString colorStyle =
+                        QStringLiteral("color: %1").arg(chatColor);
+                    this->ui_.nameLabel->setStyleSheet(colorStyle);
+                    this->ui_.localizedNameLabel->setStyleSheet(colorStyle);
+                }
+
                 const int followers = obj.value("followers").toInt(-1);
-                const int globalBadges = obj.value("globalBadges").toInt();
+                const int following = obj.value("follows").toInt(-1);
 
                 if (followers >= 0)
                 {
-                    this->ui_.followerCountLabel->setText(
-                        QStringLiteral("Followers: %1").arg(followers));
+                    QString followerText =
+                        QStringLiteral("Followers: %1")
+                            .arg(QLocale().toString(followers));
+                    if (following >= 0)
+                    {
+                        followerText += QStringLiteral(" • Following %1")
+                                            .arg(QLocale().toString(following));
+                    }
+                    this->ui_.followerCountLabel->setText(followerText);
                 }
                 else
                 {
@@ -1003,6 +1020,58 @@ void UserInfoPopup::updateUserData()
 
                 if (isBanned)
                 {
+                    // For banned users, show their user ID from the Tackling
+                    // API since Helix may not return it
+                    const QString tacklingId = obj.value("id").toString();
+                    if (!tacklingId.isEmpty() &&
+                        this->ui_.userIDLabel->text().isEmpty())
+                    {
+                        this->ui_.userIDLabel->setText(TEXT_USER_ID %
+                                                       tacklingId);
+                        this->ui_.userIDLabel->setProperty("copy-text",
+                                                           tacklingId);
+                    }
+
+                    // For banned users, populate created/updated dates from
+                    // Tackling API since Helix won't return them
+                    const QString createdAt = obj.value("createdAt").toString();
+                    if (!createdAt.isEmpty() &&
+                        this->ui_.createdDateLabel->text().isEmpty())
+                    {
+                        const auto createdDt =
+                            QDateTime::fromString(createdAt, Qt::ISODateWithMs);
+                        this->ui_.createdDateLabel->setText(
+                            TEXT_CREATED.arg(createdAt.section("T", 0, 0)));
+                        if (createdDt.isValid())
+                        {
+                            this->ui_.createdDateLabel->setToolTip(
+                                formatLongFriendlyDuration(
+                                    createdDt,
+                                    QDateTime::currentDateTimeUtc()) +
+                                u" ago"_s);
+                            this->ui_.createdDateLabel->setMouseTracking(true);
+                        }
+                    }
+
+                    const QString updatedAt = obj.value("updatedAt").toString();
+                    if (!updatedAt.isEmpty())
+                    {
+                        const auto updatedDt =
+                            QDateTime::fromString(updatedAt, Qt::ISODateWithMs);
+                        if (updatedDt.isValid())
+                        {
+                            this->ui_.updatedAtLabel->setText(
+                                QStringLiteral("Updated: %1")
+                                    .arg(updatedAt.section("T", 0, 0)));
+                            this->ui_.updatedAtLabel->setToolTip(
+                                formatLongFriendlyDuration(
+                                    updatedDt,
+                                    QDateTime::currentDateTimeUtc()) +
+                                u" ago"_s);
+                            this->ui_.updatedAtLabel->setMouseTracking(true);
+                        }
+                    }
+
                     if (banReason == u"TOS_TEMPORARY")
                     {
                         banText = QStringLiteral("%1 is temporarily banned")
@@ -1048,10 +1117,13 @@ void UserInfoPopup::updateUserData()
                         }
                     }
 
+                    // Replace global badges section with the ban message
+                    this->ui_.globalBadgesLabel->setText(banText);
                     this->ui_.banStatusLabel->setText(banText);
                 }
                 else
                 {
+                    const int globalBadges = obj.value("globalBadges").toInt();
                     this->ui_.globalBadgesLabel->setText(
                         globalBadges > 0 ? QStringLiteral("Global Badges: %1")
                                                .arg(globalBadges)
