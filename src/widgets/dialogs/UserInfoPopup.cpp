@@ -1187,59 +1187,59 @@ void UserInfoPopup::updateUserData()
             })
             .execute();
 
-        getHelix()->getStreamById(
-            user.id,
-            [this, hack](bool isLive, const auto &stream) {
-                if (!hack.lock())
-                {
-                    return;
-                }
-
-                if (isLive)
-                {
-                    this->ui_.liveIndicator->setViewers(stream.viewerCount);
-                    this->ui_.liveIndicator->show();
-                }
-                else
-                {
-                    this->ui_.liveIndicator->hide();
-                }
-            },
-            [id{user.id}]() {
-                qCWarning(chatterinoWidget)
-                    << "Failed to get stream for user ID" << id;
-            },
-            []() {});
-
-        // get ignore state
-        bool isIgnoring = currentUser->blockedUserIds().contains(user.id);
-
-        // get ignoreHighlights state
-        bool isIgnoringHighlights = false;
-        const auto &vector = getSettings()->blacklistedUsers.raw();
-        for (const auto &blockedUser : vector)
-        {
-            if (this->userName_ == blockedUser.getPattern())
+    getHelix()->getStreamById(
+        this->userId_,
+        [this, hack](bool isLive, const auto &stream) {
+            if (!hack.lock())
             {
-                isIgnoringHighlights = true;
-                break;
+                return;
             }
-        }
-        if (getSettings()->isBlacklistedUser(this->userName_) &&
-            !isIgnoringHighlights)
-        {
-            this->ui_.ignoreHighlights->setToolTip("Name matched by regex");
-        }
-        else
-        {
-            this->ui_.ignoreHighlights->setEnabled(true);
-        }
-        this->ui_.block->setChecked(isIgnoring);
-        this->ui_.block->setEnabled(true);
-        this->ui_.ignoreHighlights->setChecked(isIgnoringHighlights);
-        this->ui_.notesAdd->setEnabled(true);
 
-        auto type = this->underlyingChannel_->getType();
+            if (isLive)
+            {
+                this->ui_.liveIndicator->setViewers(stream.viewerCount);
+                this->ui_.liveIndicator->show();
+            }
+            else
+            {
+                this->ui_.liveIndicator->hide();
+            }
+        },
+        [id{this->userId_}]() {
+            qCWarning(chatterinoWidget)
+                << "Failed to get stream for user ID" << id;
+        },
+        []() {});
+
+    // get ignore state
+    bool isIgnoring = currentUser->blockedUserIds().contains(this->userId_);
+
+    // get ignoreHighlights state
+    bool isIgnoringHighlights = false;
+    const auto &vector = getSettings()->blacklistedUsers.raw();
+    for (const auto &blockedUser : vector)
+    {
+        if (this->userName_ == blockedUser.getPattern())
+        {
+            isIgnoringHighlights = true;
+            break;
+        }
+    }
+    if (getSettings()->isBlacklistedUser(this->userName_) &&
+        !isIgnoringHighlights)
+    {
+        this->ui_.ignoreHighlights->setToolTip("Name matched by regex");
+    }
+    else
+    {
+        this->ui_.ignoreHighlights->setEnabled(true);
+    }
+    this->ui_.block->setChecked(isIgnoring);
+    this->ui_.block->setEnabled(true);
+    this->ui_.ignoreHighlights->setChecked(isIgnoringHighlights);
+    this->ui_.notesAdd->setEnabled(true);
+
+    auto type = this->underlyingChannel_->getType();
 
         if (type == Channel::Type::Twitch)
         {
