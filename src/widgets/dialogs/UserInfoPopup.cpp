@@ -1239,7 +1239,7 @@ void UserInfoPopup::updateUserData()
         this->ui_.ignoreHighlights->setChecked(isIgnoringHighlights);
         this->ui_.notesAdd->setEnabled(true);
 
-            auto type = this->underlyingChannel_->getType();
+        auto type = this->underlyingChannel_->getType();
 
         if (type == Channel::Type::Twitch)
         {
