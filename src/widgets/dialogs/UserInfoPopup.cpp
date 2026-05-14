@@ -850,16 +850,8 @@ void UserInfoPopup::installEvents()
                 }));
     }
 
-    // Refresh user data when account changes
-    this->userDataUpdatedConnection_ =
-        std::make_unique<pajlada::Signals::ScopedConnection>(
-            getApp()->getUserData()->userDataUpdated.connect(
-                [this](const QString &userID) {
-                    if (userID == this->userId_)
-                    {
-                        this->updateNotes();
-                    }
-                }));
+    // userDataUpdatedConnection_ is intentionally left unwired here;
+    // updateNotes() is called directly after user data is fetched.
 }
 
 void UserInfoPopup::updateLatestMessages()
