@@ -71,6 +71,8 @@ private:
     void updateAvatarUrl();
 
     void updateKickUserData();
+    void applyTacklingApiData(const QJsonObject &obj, const QString &userID,
+                              const std::weak_ptr<bool> &hack);
     void onKickProfilePictureClick(Qt::MouseButton button);
 
     QStringView platformName() const;
