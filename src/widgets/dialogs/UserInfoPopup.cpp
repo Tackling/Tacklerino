@@ -793,6 +793,85 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
     this->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Policy::Ignored);
 }
 
+void UserInfoPopup::setData(const QString &name, const ChannelPtr &channel)
+{
+    this->setData(name, channel, channel);
+}
+
+void UserInfoPopup::setData(const QString &name,
+                            const ChannelPtr &contextChannel,
+                            const ChannelPtr &openingChannel)
+{
+    this->channel_ = contextChannel;
+    this->underlyingChannel_ = openingChannel;
+
+    this->isKick_ =
+        dynamic_cast<KickChannel *>(this->underlyingChannel_.get()) != nullptr;
+
+    if (name.startsWith(u"kick:"))
+    {
+        this->kickUserSlug_ = name.mid(5);
+        this->ui_.nameLabel->setText(this->kickUserSlug_);
+    }
+    else if (name.startsWith(u"id:"))
+    {
+        this->userId_ = name.mid(3);
+    }
+    else
+    {
+        this->userName_ = name;
+        this->ui_.nameLabel->setText(name);
+    }
+
+    this->updateLatestMessages();
+    this->userStateChanged_.invoke();
+
+    if (this->isKick_)
+    {
+        this->updateKickUserData();
+    }
+    else
+    {
+        this->updateUserData();
+    }
+}
+
+void UserInfoPopup::installEvents()
+{
+    // Update user state (mod/broadcaster buttons) when the channel's user state
+    // changes
+    if (auto *twitchChannel =
+            dynamic_cast<TwitchChannel *>(this->underlyingChannel_.get()))
+    {
+        this->refreshConnection_ =
+            std::make_unique<pajlada::Signals::ScopedConnection>(
+                twitchChannel->userStateChanged.connect([this] {
+                    this->userStateChanged_.invoke();
+                }));
+    }
+
+    // Refresh user data when account changes
+    this->userDataUpdatedConnection_ =
+        std::make_unique<pajlada::Signals::ScopedConnection>(
+            getApp()->getUserData()->userDataUpdated.connect(
+                [this](const QString &userID) {
+                    if (userID == this->userId_)
+                    {
+                        this->updateNotes();
+                    }
+                }));
+}
+
+void UserInfoPopup::updateLatestMessages()
+{
+    auto filtered = filterMessages(this->userName_, this->underlyingChannel_);
+
+    bool hasMessages = filtered->getMessageSnapshot().size() > 0;
+    this->ui_.latestMessages->setChannel(filtered);
+    this->ui_.latestMessages->setVisible(hasMessages);
+    this->ui_.noMessagesLabel->setVisible(!hasMessages);
+}
+
 void UserInfoPopup::themeChangedEvent()
 {
     BaseWindow::themeChangedEvent();
