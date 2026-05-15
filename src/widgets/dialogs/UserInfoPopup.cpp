@@ -1001,7 +1001,7 @@ void UserInfoPopup::updateUserData()
                             .arg(QLocale().toString(followers));
                     if (following >= 0)
                     {
-                        followerText += QStringLiteral(" • Following %1")
+                        followerText += QStringLiteral(" • Following: %1")
                                             .arg(QLocale().toString(following));
                     }
                     this->ui_.followerCountLabel->setText(followerText);
