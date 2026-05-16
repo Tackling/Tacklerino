@@ -899,7 +899,7 @@ void UserInfoPopup::windowDeactivationEvent()
 
 void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
 {
-    // Apply chat color to the display name labels
+    // Apply chat color to name labels
     const QString chatColor = obj.value("chatColor").toString();
     if (!chatColor.isEmpty())
     {
@@ -908,6 +908,7 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
         this->ui_.localizedNameLabel->setStyleSheet(colorStyle);
     }
 
+    // Followers + Following for all users
     const int followers = obj.value("followers").toInt(-1);
     const int following = obj.value("follows").toInt(-1);
 
@@ -928,7 +929,7 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
     }
 
-    // updatedAt shown for all users
+    // Updated date for all users
     const QString updatedAt = obj.value("updatedAt").toString();
     if (!updatedAt.isEmpty())
     {
@@ -953,8 +954,8 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
 
     if (isBanned)
     {
-        // For banned users Helix returns nothing, so populate everything
-        // from the Tackling API response
+        // For banned users Helix returns nothing - populate everything from
+        // Tackling
         const QString tDisplayName = obj.value("displayName").toString();
         const QString tLogin = obj.value("login").toString();
         if (!tDisplayName.isEmpty())
@@ -1045,8 +1046,8 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             }
         }
 
-        // Replace global badges section with ban message
-        this->ui_.globalBadgesLabel->setText(banText);
+        // Show ban message in banStatusLabel, clear globalBadgesLabel
+        this->ui_.globalBadgesLabel->setText(QString());
         this->ui_.banStatusLabel->setText(banText);
     }
     else
@@ -1056,6 +1057,7 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             globalBadges > 0
                 ? QStringLiteral("Global Badges: %1").arg(globalBadges)
                 : QString());
+        this->ui_.banStatusLabel->setText(QString());
     }
 
     const auto roles = rolesFromTacklingUserInfo(obj.value("roles").toObject());
@@ -1077,11 +1079,10 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
     }
 
     std::weak_ptr<bool> hack = this->lifetimeHack_;
-    const QString userID = this->userId_;
     NetworkRequest(previewUrl, NetworkRequestType::Get)
         .caller(this)
         .followRedirects(true)
-        .onSuccess([this, hack, userID](auto imageResult) {
+        .onSuccess([this, hack](auto imageResult) {
             if (!hack.lock() || imageResult.status() != 200)
             {
                 return;
@@ -1311,21 +1312,26 @@ void UserInfoPopup::updateUserData()
         }
     };
 
-    const auto onUserFetchFailed = [this, hack] {
+    auto tacklingDone = std::make_shared<bool>(false);
+
+    const auto onUserFetchFailed = [this, hack, tacklingDone] {
         if (!hack.lock())
         {
             return;
         }
 
-        this->ui_.followerCountLabel->setText(
-            TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
-        this->ui_.createdDateLabel->setText(TEXT_CREATED.arg(TEXT_UNAVAILABLE));
-
-        this->ui_.nameLabel->setText(this->userName_);
-
-        this->ui_.userIDLabel->setText(u"ID " % TEXT_UNAVAILABLE);
-        this->ui_.userIDLabel->setProperty("copy-text",
-                                           TEXT_UNAVAILABLE.toString());
+        // Only set "(not available)" if Tackling hasn't already loaded
+        if (!*tacklingDone)
+        {
+            this->ui_.followerCountLabel->setText(
+                TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
+            this->ui_.createdDateLabel->setText(
+                TEXT_CREATED.arg(TEXT_UNAVAILABLE));
+            this->ui_.nameLabel->setText(this->userName_);
+            this->ui_.userIDLabel->setText(u"ID " % TEXT_UNAVAILABLE);
+            this->ui_.userIDLabel->setProperty("copy-text",
+                                               TEXT_UNAVAILABLE.toString());
+        }
     };
 
     if (!this->userId_.isEmpty())
@@ -1339,7 +1345,7 @@ void UserInfoPopup::updateUserData()
                                   onUserFetchFailed);
     }
 
-    // Tackling API call - fires unconditionally for both valid and banned users
+    // Unconditional Tackling API call - works for both valid and banned
     {
         const QString tacklingUrl =
             QStringLiteral("https://api.tackling.cc/twitch/UserInfo?login=%1")
@@ -1347,23 +1353,18 @@ void UserInfoPopup::updateUserData()
 
         NetworkRequest(tacklingUrl)
             .caller(this)
-            .onSuccess([this, hack](auto result) {
+            .onSuccess([this, hack, tacklingDone](auto result) {
                 if (!hack.lock())
                 {
                     return;
                 }
+                *tacklingDone = true;
                 this->applyTacklingApiData(result.parseJson());
             })
             .onError([this, hack](auto) {
                 if (!hack.lock())
                 {
                     return;
-                }
-                // Only set unavailable if not already populated by Helix
-                if (this->ui_.followerCountLabel->getText().isEmpty())
-                {
-                    this->ui_.followerCountLabel->setText(
-                        TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
                 }
             })
             .execute();
