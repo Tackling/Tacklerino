@@ -557,11 +557,17 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             vbox.emplace<Label>(TEXT_CREATED.arg(""))
                 .assign(&this->ui_.createdDateLabel);
             vbox.emplace<Label>("").assign(&this->ui_.followageLabel);
+            this->ui_.followageLabel->setVisible(false);
             vbox.emplace<Label>("").assign(&this->ui_.subageLabel);
+            this->ui_.subageLabel->setVisible(false);
             vbox.emplace<Label>("").assign(&this->ui_.rolesLabel);
+            this->ui_.rolesLabel->setVisible(false);
             vbox.emplace<Label>("").assign(&this->ui_.globalBadgesLabel);
+            this->ui_.globalBadgesLabel->setVisible(false);
             vbox.emplace<Label>("").assign(&this->ui_.updatedAtLabel);
+            this->ui_.updatedAtLabel->setVisible(false);
             vbox.emplace<Label>("").assign(&this->ui_.banStatusLabel);
+            this->ui_.banStatusLabel->setVisible(false);
         }
     }
 
@@ -899,7 +905,6 @@ void UserInfoPopup::windowDeactivationEvent()
 
 void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
 {
-    // Apply chat color to name labels
     const QString chatColor = obj.value("chatColor").toString();
     if (!chatColor.isEmpty())
     {
@@ -908,10 +913,8 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
         this->ui_.localizedNameLabel->setStyleSheet(colorStyle);
     }
 
-    // Followers + Following for all users
     const int followers = obj.value("followers").toInt(-1);
     const int following = obj.value("follows").toInt(-1);
-
     if (followers >= 0)
     {
         QString followerText =
@@ -923,13 +926,7 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
         }
         this->ui_.followerCountLabel->setText(followerText);
     }
-    else
-    {
-        this->ui_.followerCountLabel->setText(
-            TEXT_FOLLOWERS.arg(TEXT_UNAVAILABLE));
-    }
 
-    // Updated date for all users
     const QString updatedAt = obj.value("updatedAt").toString();
     if (!updatedAt.isEmpty())
     {
@@ -937,6 +934,7 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             QDateTime::fromString(updatedAt, Qt::ISODateWithMs);
         if (updatedDt.isValid())
         {
+            this->ui_.updatedAtLabel->setVisible(true);
             this->ui_.updatedAtLabel->setText(
                 QStringLiteral("Updated: %1")
                     .arg(updatedAt.section("T", 0, 0)));
@@ -954,8 +952,6 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
 
     if (isBanned)
     {
-        // For banned users Helix returns nothing - populate everything from
-        // Tackling
         const QString tDisplayName = obj.value("displayName").toString();
         const QString tLogin = obj.value("login").toString();
         if (!tDisplayName.isEmpty())
@@ -972,7 +968,6 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             }
         }
 
-        // Load avatar from Tackling profileImageURL
         const QString profileImageUrl = obj.value("profileImageURL").toString();
         if (!profileImageUrl.isEmpty())
         {
@@ -980,7 +975,6 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
                              false);
         }
 
-        // User ID
         const QString tacklingId = obj.value("id").toString();
         if (!tacklingId.isEmpty())
         {
@@ -988,7 +982,6 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             this->ui_.userIDLabel->setProperty("copy-text", tacklingId);
         }
 
-        // Created date
         const QString createdAt = obj.value("createdAt").toString();
         if (!createdAt.isEmpty())
         {
@@ -1006,7 +999,6 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             }
         }
 
-        // Ban reason text
         if (banReason == u"TOS_TEMPORARY")
         {
             banText =
@@ -1045,21 +1037,25 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             }
         }
 
-        // Show ban message in banStatusLabel, clear globalBadgesLabel
+        this->ui_.globalBadgesLabel->setVisible(false);
         this->ui_.globalBadgesLabel->setText(QString());
+        this->ui_.banStatusLabel->setVisible(true);
         this->ui_.banStatusLabel->setText(banText);
     }
     else
     {
         const int globalBadges = obj.value("globalBadges").toInt();
+        this->ui_.globalBadgesLabel->setVisible(globalBadges > 0);
         this->ui_.globalBadgesLabel->setText(
             globalBadges > 0
                 ? QStringLiteral("Global Badges: %1").arg(globalBadges)
                 : QString());
+        this->ui_.banStatusLabel->setVisible(false);
         this->ui_.banStatusLabel->setText(QString());
     }
 
     const auto roles = rolesFromTacklingUserInfo(obj.value("roles").toObject());
+    this->ui_.rolesLabel->setVisible(!roles.isEmpty());
     this->ui_.rolesLabel->setText(roles.join(", "));
 
     const auto stream = obj.value("stream");
@@ -1071,7 +1067,6 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
     const auto streamObj = stream.toObject();
     const auto previewUrl = normalizeStreamPreviewUrl(
         streamObj.value("previewImageURL").toString());
-
     if (previewUrl.isEmpty())
     {
         return;
@@ -1086,13 +1081,11 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
             {
                 return;
             }
-
             const auto thumbnail = imageResult.getData().toBase64();
             const auto tooltip =
                 QString("<p style=\"text-align:center;\"><img height=\"203\" "
                         "src=\"data:image/jpg;base64,%1\"></p>")
                     .arg(QString::fromLatin1(thumbnail));
-
             this->ui_.nameLabel->setToolTip(tooltip);
             this->ui_.nameLabel->setMouseTracking(true);
             this->ui_.localizedNameLabel->setToolTip(tooltip);
@@ -1242,6 +1235,7 @@ void UserInfoPopup::updateUserData()
                             subageInfo.followingSince, Qt::ISODate);
                         QString followingSince =
                             followedAt.toString("yyyy-MM-dd");
+                        this->ui_.followageLabel->setVisible(true);
                         this->ui_.followageLabel->setText("❤ Following since " +
                                                           followingSince);
                         this->ui_.followageLabel->setToolTip(
@@ -1253,11 +1247,13 @@ void UserInfoPopup::updateUserData()
 
                     if (subageInfo.isSubHidden)
                     {
+                        this->ui_.subageLabel->setVisible(true);
                         this->ui_.subageLabel->setText(
                             "Subscription status hidden");
                     }
                     else if (subageInfo.isSubbed)
                     {
+                        this->ui_.subageLabel->setVisible(true);
                         this->ui_.subageLabel->setText(
                             QString("★ Tier %1 - Subscribed for %2 months")
                                 .arg(subageInfo.subTier)
@@ -1265,6 +1261,7 @@ void UserInfoPopup::updateUserData()
                     }
                     else if (subageInfo.totalSubMonths)
                     {
+                        this->ui_.subageLabel->setVisible(true);
                         this->ui_.subageLabel->setText(
                             QString("★ Previously subscribed for %1 months")
                                 .arg(subageInfo.totalSubMonths));
@@ -1319,7 +1316,6 @@ void UserInfoPopup::updateUserData()
             return;
         }
 
-        // Only set "(not available)" if Tackling hasn't already loaded
         if (!*tacklingDone)
         {
             this->ui_.followerCountLabel->setText(
@@ -1344,7 +1340,7 @@ void UserInfoPopup::updateUserData()
                                   onUserFetchFailed);
     }
 
-    // Unconditional Tackling API call - works for both valid and banned
+    // Unconditional Tackling API - fires for both valid and banned users
     {
         const QString tacklingUrl =
             QStringLiteral("https://api.tackling.cc/twitch/UserInfo?login=%1")
