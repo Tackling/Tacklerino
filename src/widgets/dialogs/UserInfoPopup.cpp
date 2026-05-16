@@ -1031,12 +1031,11 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
                     QDateTime::fromString(deletedAt, Qt::ISODateWithMs);
                 if (deletedDt.isValid())
                 {
-                    const auto daysAgo =
-                        deletedDt.daysTo(QDateTime::currentDateTimeUtc());
-                    banText = QStringLiteral(
-                                  "%1 deactivated their account %2 days ago")
-                                  .arg(this->userName_)
-                                  .arg(daysAgo);
+                    banText =
+                        QStringLiteral("%1 deactivated their account %2 ago")
+                            .arg(this->userName_)
+                            .arg(formatLongFriendlyDuration(
+                                deletedDt, QDateTime::currentDateTimeUtc()));
                 }
             }
             else
