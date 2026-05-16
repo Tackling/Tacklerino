@@ -248,6 +248,56 @@ namespace chatterino {
 
 using namespace literals;
 
+namespace {
+
+// Returns up to 3 largest time units in short form e.g. "1y 2mo 3w"
+QString shortFriendlyDuration(const QDateTime &from, const QDateTime &to)
+{
+    qint64 secs = from.secsTo(to);
+    if (secs < 0)
+    {
+        secs = -secs;
+    }
+    struct Unit {
+        qint64 secs;
+        const char *suffix;
+    };
+    static const Unit units[] = {
+        {365LL * 24 * 3600, "y"},
+        {30LL * 24 * 3600, "mo"},
+        {7LL * 24 * 3600, "w"},
+        {24LL * 3600, "d"},
+        {3600LL, "h"},
+        {60LL, "m"},
+        {1LL, "s"},
+    };
+    QStringList parts;
+    for (const auto &u : units)
+    {
+        if (secs >= u.secs)
+        {
+            parts << QString::number(secs / u.secs) + QLatin1String(u.suffix);
+            secs %= u.secs;
+        }
+        if (parts.size() == 3)
+        {
+            break;
+        }
+    }
+    if (parts.isEmpty())
+    {
+        return QStringLiteral("0s");
+    }
+    if (parts.size() == 1)
+    {
+        return parts[0];
+    }
+    const QString last = parts.takeLast();
+    return parts.join(u", "_s) + u" & "_s + last;
+}
+
+}  // namespace
+
 UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
     : DraggablePopup(closeAutomatically, split)
     , split_(split)
@@ -1026,7 +1076,7 @@ void UserInfoPopup::applyTacklingApiData(const QJsonObject &obj)
                     banText =
                         QStringLiteral("%1 deactivated their account %2 ago")
                             .arg(this->userName_)
-                            .arg(formatLongFriendlyDuration(
+                            .arg(shortFriendlyDuration(
                                 deletedDt, QDateTime::currentDateTimeUtc()));
                 }
             }
