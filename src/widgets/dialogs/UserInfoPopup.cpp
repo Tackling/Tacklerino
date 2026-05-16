@@ -552,22 +552,22 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                 vbox.emplace<Label>(TEXT_PRONOUNS.arg(TEXT_LOADING))
                     .assign(&this->ui_.pronounsLabel);
             }
+            vbox.emplace<Label>("").assign(&this->ui_.banStatusLabel);
+            this->ui_.banStatusLabel->setVisible(false);
             vbox.emplace<Label>(TEXT_FOLLOWERS.arg(""))
                 .assign(&this->ui_.followerCountLabel);
-            vbox.emplace<Label>(TEXT_CREATED.arg(""))
-                .assign(&this->ui_.createdDateLabel);
             vbox.emplace<Label>("").assign(&this->ui_.followageLabel);
             this->ui_.followageLabel->setVisible(false);
             vbox.emplace<Label>("").assign(&this->ui_.subageLabel);
             this->ui_.subageLabel->setVisible(false);
-            vbox.emplace<Label>("").assign(&this->ui_.rolesLabel);
-            this->ui_.rolesLabel->setVisible(false);
             vbox.emplace<Label>("").assign(&this->ui_.globalBadgesLabel);
             this->ui_.globalBadgesLabel->setVisible(false);
+            vbox.emplace<Label>("").assign(&this->ui_.rolesLabel);
+            this->ui_.rolesLabel->setVisible(false);
+            vbox.emplace<Label>(TEXT_CREATED.arg(""))
+                .assign(&this->ui_.createdDateLabel);
             vbox.emplace<Label>("").assign(&this->ui_.updatedAtLabel);
             this->ui_.updatedAtLabel->setVisible(false);
-            vbox.emplace<Label>("").assign(&this->ui_.banStatusLabel);
-            this->ui_.banStatusLabel->setVisible(false);
         }
     }
 
